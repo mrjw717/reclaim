@@ -13,6 +13,8 @@ use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
 const ARCHIVE_VERSION: u32 = 1;
 const MAX_ARCHIVE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
+const MAX_BACKUP_FILES: usize = 100_000;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -128,7 +130,7 @@ pub fn create(
             .map_err(|e| e.to_string())?;
         let file = archive.finish().map_err(|e| e.to_string())?;
         file.sync_all().map_err(|e| e.to_string())?;
-        inspect(&temp)?;
+        inspect(&temp, None)?;
         if destination.exists() {
             let _ = fs::remove_file(&temp);
             return Err(
@@ -144,7 +146,11 @@ pub fn create(
 
 fn safe_relative(value: &str) -> Result<PathBuf, String> {
     let path = Path::new(value);
-    if path.is_absolute()
+    if value.contains('\\')
+        || value.starts_with('/')
+        || value.split('/').any(|part| part.is_empty() || part == "." || part == "..")
+        || value.split('/').next().is_some_and(|part| part.contains(':'))
+        || path.is_absolute()
         || path
             .components()
             .any(|c| !matches!(c, Component::Normal(_)))
@@ -154,7 +160,7 @@ fn safe_relative(value: &str) -> Result<PathBuf, String> {
     Ok(path.to_path_buf())
 }
 
-fn inspect(path: &Path) -> Result<(Manifest, Vec<(String, Vec<u8>)>), String> {
+fn inspect(path: &Path, destination: Option<&Path>) -> Result<Manifest, String> {
     let metadata = fs::metadata(path).map_err(|e| format!("Could not open backup: {e}"))?;
     if metadata.len() > MAX_ARCHIVE_BYTES {
         return Err("Backup exceeds the 2 GB safety limit.".into());
@@ -165,6 +171,9 @@ fn inspect(path: &Path) -> Result<(Manifest, Vec<(String, Vec<u8>)>), String> {
     let mut manifest_reader = archive
         .by_name("manifest.json")
         .map_err(|_| "Backup manifest is missing.".to_string())?;
+    if manifest_reader.size() > MAX_MANIFEST_BYTES {
+        return Err("Backup manifest exceeds the 1 MB safety limit.".into());
+    }
     let mut json = String::new();
     manifest_reader
         .read_to_string(&mut json)
@@ -175,9 +184,11 @@ fn inspect(path: &Path) -> Result<(Manifest, Vec<(String, Vec<u8>)>), String> {
     if manifest.format_version != ARCHIVE_VERSION || manifest.schema_version > 3 {
         return Err("This backup format is not compatible with this Reclaim version.".into());
     }
+    if manifest.files.is_empty() || manifest.files.len() > MAX_BACKUP_FILES {
+        return Err("Backup contains an unsupported number of files.".into());
+    }
     let mut expected = HashSet::new();
     let mut total = 0u64;
-    let mut contents = Vec::new();
     for entry in &manifest.files {
         let relative = safe_relative(&entry.path)?;
         if entry.path == "manifest.json" || !expected.insert(entry.path.clone()) {
@@ -196,12 +207,32 @@ fn inspect(path: &Path) -> Result<(Manifest, Vec<(String, Vec<u8>)>), String> {
         if total > MAX_ARCHIVE_BYTES {
             return Err("Backup contents exceed the 2 GB safety limit.".into());
         }
-        let mut bytes = Vec::with_capacity(file.size() as usize);
-        file.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
-        if digest(&bytes) != entry.sha256 {
+        let output_path = if let Some(destination) = destination {
+            let output_path = destination.join(&relative);
+            if let Some(parent) = output_path.parent() {
+                fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            Some(File::options().write(true).create_new(true).open(&output_path).map_err(|e| e.to_string())?)
+        } else {
+            None
+        };
+        let mut hasher = Sha256::new();
+        let mut copied = 0u64;
+        let mut buffer = [0u8; 64 * 1024];
+        let mut output = output_path;
+        loop {
+            let count = file.read(&mut buffer).map_err(|e| e.to_string())?;
+            if count == 0 { break; }
+            copied = copied.saturating_add(count as u64);
+            if copied > entry.size { return Err("Backup file exceeded its declared size.".into()); }
+            hasher.update(&buffer[..count]);
+            if let Some(writer) = output.as_mut() {
+                writer.write_all(&buffer[..count]).map_err(|e| e.to_string())?;
+            }
+        }
+        if copied != entry.size || format!("{:x}", hasher.finalize()) != entry.sha256 {
             return Err(format!("Backup integrity check failed for {}.", entry.path));
         }
-        contents.push((relative.to_string_lossy().replace('\\', "/"), bytes));
     }
     if !expected.contains("database.sqlite3") {
         return Err("Backup database is missing.".into());
@@ -209,22 +240,14 @@ fn inspect(path: &Path) -> Result<(Manifest, Vec<(String, Vec<u8>)>), String> {
     if archive.len() != manifest.files.len() + 1 {
         return Err("Backup contains files that are not listed in its manifest.".into());
     }
-    Ok((manifest, contents))
+    Ok(manifest)
 }
 
 pub fn stage_restore(path: &Path, data_dir: &Path) -> Result<PathBuf, String> {
-    let (_, files) = inspect(path)?;
     let stage = data_dir.join(format!(".restore-{}", Uuid::new_v4()));
     fs::create_dir_all(&stage).map_err(|e| e.to_string())?;
     let result = (|| {
-        for (relative, bytes) in files {
-            let relative = safe_relative(&relative)?;
-            let out = stage.join(relative);
-            if let Some(parent) = out.parent() {
-                fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-            }
-            fs::write(out, bytes).map_err(|e| e.to_string())?;
-        }
+        inspect(path, Some(&stage))?;
         let database = Connection::open(stage.join("database.sqlite3"))
             .map_err(|e| format!("Backup database could not be opened: {e}"))?;
         let integrity: String = database
@@ -267,6 +290,21 @@ mod tests {
         let path = std::env::temp_dir().join(format!("reclaim-backup-test-{}", Uuid::new_v4()));
         fs::create_dir_all(&path).unwrap();
         path
+    }
+
+    #[test]
+    fn backup_paths_reject_unix_and_windows_traversal() {
+        assert!(safe_relative("photos/item-a/photo.jpg").is_ok());
+        for path in [
+            "../secret",
+            "photos/../secret",
+            "/etc/passwd",
+            "C:/private/file",
+            r"photos\..\secret",
+            "photos//photo.jpg",
+        ] {
+            assert!(safe_relative(path).is_err(), "accepted unsafe path: {path}");
+        }
     }
 
     #[test]

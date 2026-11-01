@@ -1,13 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export type Category = { id: string; name: string; description: string; icon: string; active: boolean; sortOrder: number; retentionDays: number | null };
-export type StorageLocation = { id: string; name: string; description: string; parentId: string | null; parentName: string | null; secure: boolean; active: boolean; sortOrder: number };
+export type StorageLocation = { id: string; name: string; description: string; parentId: string | null; parentName: string | null; organizationLocationId: string | null; organizationLocationName: string | null; secure: boolean; active: boolean; sortOrder: number };
 export type OrganizationLocation = { id:string;name:string;street:string;city:string;region:string;postalCode:string;country:string;active:boolean };
 export type Organization = { id: string; name: string; organizationType: string; phone: string; email: string; street: string; city: string; region: string; postalCode: string; country: string; operatingHours: string; legacyOperatingHours:string|null; locale: string; dateFormat: string; retentionDays: number; requireVerification: boolean; allowAnonymousFinders: boolean; theme: "light" | "dark" | "system"; primaryColor: string; logoDataUrl: string | null; staffName:string };
 export type SetupInput = Omit<Organization, "id"|"legacyOperatingHours"|"staffName"> & { locationName: string };
 export type FoundItem = { id: string; reference: string; name: string; categoryId: string; categoryName: string; description: string; color: string; brand: string; foundAt: string; foundLocation: string; storageLocationId: string; storageLocation: string; storageSecure: boolean; finderName: string; finderContact: string; staffNotes: string; status: "in_custody" | "returned" | "disposed"; retentionDays: number | null; returnedAt: string | null; disposedAt: string | null; createdAt: string };
 export type LostReport = { id: string; reference: string; name: string; categoryId: string; categoryName: string; description: string; color: string; brand: string; lostAt: string; lastLocation: string; claimantName: string; contact: string; notes: string; status: "open" | "resolved" | "closed"; createdAt: string };
-export type MatchCandidate = { foundItem: FoundItem; score: number; explanation: string[]; reviewStatus: string };
+export type CompetingClaim = { reportId:string;reference:string;claimantName:string;itemName:string;status:string;score:number };
+export type MatchCandidate = { foundItem: FoundItem; score: number; explanation: string[]; reviewStatus: string; competingClaims:CompetingClaim[] };
 export type ReturnInput = { foundItemId: string; lostReportId: string | null; recipientName: string; verificationMethod: string; verificationNote: string; staffNote: string };
 export type InventoryPage = { items: FoundItem[]; total: number; page: number; pageSize: number };
 export type DashboardStats = { held: number; openReports: number; foundToday: number; returnedPeriod: number; matchesToReview: number; retentionReview: number; disposedPeriod: number };
@@ -32,7 +33,7 @@ export const api = {
   deleteStorageLocation: (id: string) => invoke<void>("delete_storage_location", { id }),
   listFound: (query: string, categoryId: string | null, storageLocationId: string | null, status: string, page = 1, pageSize = 30, dateFrom = "", dateTo = "") => invoke<InventoryPage>("list_found_items", { query, categoryId, storageLocationId, status, dateFrom, dateTo, page, pageSize }),
   createFound: (input: FoundInput) => invoke<FoundItem>("create_found_item", { input }),
-  importPhoto: (itemId: string, sourcePath: string) => invoke<{id:string;relativePath:string;thumbnailPath:string|null;mimeType:string;byteSize:number}>("import_item_photo", { itemId, sourcePath }),
+  importPhoto: (itemId: string, photoDataUrl: string) => invoke<{id:string;relativePath:string;thumbnailPath:string|null;mimeType:string;byteSize:number}>("import_item_photo", { itemId, photoDataUrl }),
   itemPhotos: (itemId: string) => invoke<{id:string;dataUrl:string}[]>("item_photos", { itemId }),
   removePhoto: (photoId: string) => invoke<void>("remove_item_photo", { photoId }),
   updateFound: (id: string, input: FoundInput) => invoke<FoundItem>("update_found_item", { id, input }),
@@ -45,12 +46,13 @@ export const api = {
   listLost: (query: string, status: string) => invoke<LostReport[]>("list_lost_reports", { query, status }),
   matchingCandidates: (lostReportId: string) => invoke<MatchCandidate[]>("matching_candidates", { lostReportId }),
   reviewMatch: (lostReportId: string, foundItemId: string, status: string) => invoke<void>("review_match", { lostReportId, foundItemId, status }),
+  adjudicateMatch: (lostReportId:string,foundItemId:string) => invoke<void>("adjudicate_match",{lostReportId,foundItemId}),
   itemActivity: (recordType: string, recordId: string) => invoke<{id:string;recordType:string;recordId:string;eventType:string;happenedAt:string;staffName:string;details:string}[]>("item_activity", { recordType, recordId }),
   dashboardStats: () => invoke<DashboardStats>("dashboard_stats"),
   retentionQueue: () => invoke<RetentionRecord[]>("retention_queue"),
   updateOrganization: (organization: Organization) => invoke<Organization>("update_organization", { organization }),
-  exportBackup: (destination: string) => invoke<{formatVersion:number;schemaVersion:number;createdAt:string;files:{path:string;sha256:string;size:number}[]}>("export_backup", { destination }),
-  restoreBackup: (source: string) => invoke<void>("restore_backup", { source }),
+  exportBackup: () => invoke<{formatVersion:number;schemaVersion:number;createdAt:string;files:{path:string;sha256:string;size:number}[]}|null>("export_backup"),
+  restoreBackup: () => invoke<boolean>("restore_backup"),
 };
 
 export const emptyStats: DashboardStats = { held: 0, openReports: 0, foundToday: 0, returnedPeriod: 0, matchesToReview: 0, retentionReview: 0, disposedPeriod: 0 };

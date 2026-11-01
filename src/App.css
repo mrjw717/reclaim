@@ -325,7 +325,7 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .setup-content { width: min(100%,780px); min-height: 100vh; margin: 0 auto; padding: 37px clamp(32px,6vw,88px) 25px; display: flex; flex-direction: column; }
 .setup-step-top { display: flex; align-items: center; justify-content: space-between; color: var(--text-muted); font-size: 8px; font-weight: 700; letter-spacing: .9px; }
 .setup-step-top .eyebrow { color: var(--text-muted); }
-.step-progress { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin: 17px 0 0; }
+.step-progress { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 8px; margin: 17px 0 0; }
 .step-progress > div { min-width: 0; display: flex; align-items: center; gap: 6px; color: var(--text-muted); }
 .step-progress i { height: 3px; flex: 1; border-radius: 2px; background: var(--surface-secondary); }
 .step-progress .complete i { background: var(--accent-green-surface); }
@@ -382,6 +382,8 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .secure-hint { align-self: end; min-height: 34px; display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 7px; background: var(--surface-primary); color: var(--state-warning-foreground); font-size: 8px; line-height: 1.35; }
 .secure-hint svg { flex: 0 0 auto; color: var(--state-warning-foreground); }
 .photo-placeholder { min-height: 53px; display: flex; align-items: center; gap: 9px; margin-top: 12px; padding: 8px 10px; border: 1px dashed var(--border-subtle); border-radius: 8px; background: var(--surface-primary); }
+.photo-file-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
+.photo-placeholder:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .photo-placeholder > span { width: 29px; height: 29px; display: grid; place-items: center; border-radius: 8px; background: var(--surface-secondary); color: var(--text-muted); }
 .photo-placeholder > div { display: flex; flex-direction: column; gap: 3px; }
 .photo-placeholder strong { color: var(--text-secondary); font-size: 9px; }
@@ -455,6 +457,10 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .date-filters input { min-height:28px;padding:3px 6px;border: 1px solid var(--border-subtle);border-radius:6px;background: var(--surface-primary);color: var(--text-primary);font-size:9px; }
 .lost-actions { display:flex;align-items:center;gap:4px;flex-wrap:wrap; }
 .lost-row { padding:10px 0; }
+.mobile-settings-button { display:none; }
+.competing-claims { align-items:flex-start; margin:0; }
+.competing-claims > span { display:grid; gap:4px; }
+.competing-claims small { color:var(--text-secondary); }
 .app-shell :is(input,select,textarea,button):disabled { cursor:not-allowed; }
 .app-shell :is(input,select,textarea)[aria-invalid="true"] { border-color: var(--state-danger-foreground); }
 .launch-state .brand-mark { width: 43px; height: 43px; font-size: 29px; margin-bottom: 8px; }
@@ -517,6 +523,7 @@ button:disabled { cursor: not-allowed; opacity: .52; }
   .topbar { height: 51px; flex-basis: 51px; padding: 0 17px; }
   .topbar-actions { gap: 10px; }
   .help-button,.topbar-divider { display: none; }
+  .mobile-settings-button { display:inline-flex; }
   .page-content { padding: 25px 17px 25px; }
   .page-heading { align-items: flex-start; flex-direction: column; gap: 13px; margin-bottom: 17px; }
   .page-heading h1 { font-size: 22px; }
@@ -644,3 +651,8 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .dev-autofill > span { color: var(--text-muted); font-size:9px; font-weight:800; letter-spacing:.09em; }
 .workspace-switcher { color: inherit; text-align:left; width:calc(100% - 6px); cursor:pointer; font:inherit; }
 .organization-locations { margin:20px 0; padding:18px 0; border-block:1px solid var(--border-subtle); }
+.site-form-actions { display:flex; align-items:flex-end; gap:8px; }
+.dev-autofill { flex-wrap:wrap; }
+.dev-autofill-picker { display:flex; align-items:center; gap:6px; min-width:0; color:var(--text-secondary); font-size:9px; }
+.dev-autofill-picker > span { color:var(--text-muted); font-size:9px; font-weight:600; letter-spacing:0; }
+.dev-autofill-picker select { min-width:160px; min-height:29px; padding:5px 24px 5px 8px; border:1px solid var(--border-subtle); border-radius:7px; background:var(--surface-primary); color:var(--text-primary); font:inherit; }

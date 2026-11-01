@@ -202,6 +202,27 @@ fn valid_logo_data_url(value: &str) -> bool {
         .iter()
         .any(|prefix| value.starts_with(prefix))
 }
+
+#[cfg(test)]
+mod organization_location_tests {
+    use super::*;
+
+    #[test]
+    fn editing_archived_site_does_not_restore_it() {
+        let mut conn = open_memory().expect("in-memory database");
+        let id = "site-1";
+        conn.execute(
+            "INSERT INTO organization_locations(id,name,street,city,region,postal_code,country,active,created_at) VALUES(?1,'North Annex','','','','','','0',?2)",
+            params![id, now()],
+        ).expect("site seeded");
+        save_organization_location(&mut conn, OrganizationLocationInput {
+            id: Some(id.into()), name: "North Annex Renovated".into(), street: "1 Main".into(),
+            city: "Sampletown".into(), region: String::new(), postal_code: String::new(), country: String::new(),
+        }).expect("site updated");
+        let active: i64 = conn.query_row("SELECT active FROM organization_locations WHERE id=?1", [id], |r| r.get(0)).expect("active field");
+        assert_eq!(active, 0, "editing a site must not implicitly restore it");
+    }
+}
 pub fn new_id() -> String {
     Uuid::new_v4().to_string()
 }
@@ -237,6 +258,8 @@ pub struct StorageLocation {
     pub description: String,
     pub parent_id: Option<String>,
     pub parent_name: Option<String>,
+    pub organization_location_id: Option<String>,
+    pub organization_location_name: Option<String>,
     pub secure: bool,
     pub active: bool,
     pub sort_order: i64,
@@ -400,6 +423,18 @@ pub struct MatchCandidate {
     pub score: i64,
     pub explanation: Vec<String>,
     pub review_status: String,
+    pub competing_claims: Vec<CompetingClaim>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompetingClaim {
+    pub report_id: String,
+    pub reference: String,
+    pub claimant_name: String,
+    pub item_name: String,
+    pub status: String,
+    pub score: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -474,7 +509,7 @@ pub fn storage_locations(
     conn: &Connection,
     include_inactive: bool,
 ) -> Result<Vec<StorageLocation>, String> {
-    let mut stmt=conn.prepare("SELECT s.id,s.name,s.description,s.parent_id,p.name,s.secure,s.active,s.sort_order FROM storage_locations s LEFT JOIN storage_locations p ON p.id=s.parent_id WHERE (?1=1 OR s.active=1) ORDER BY s.sort_order,s.name").map_err(db_error)?;
+    let mut stmt=conn.prepare("SELECT s.id,s.name,s.description,s.parent_id,p.name,s.organization_location_id,o.name,s.secure,s.active,s.sort_order FROM storage_locations s LEFT JOIN storage_locations p ON p.id=s.parent_id LEFT JOIN organization_locations o ON o.id=s.organization_location_id WHERE (?1=1 OR s.active=1) ORDER BY s.sort_order,s.name").map_err(db_error)?;
     stmt.query_map([include_inactive], |r| {
         Ok(StorageLocation {
             id: r.get(0)?,
@@ -482,9 +517,11 @@ pub fn storage_locations(
             description: r.get(2)?,
             parent_id: r.get(3)?,
             parent_name: r.get(4)?,
-            secure: r.get::<_, i64>(5)? != 0,
-            active: r.get::<_, i64>(6)? != 0,
-            sort_order: r.get(7)?,
+            organization_location_id: r.get(5)?,
+            organization_location_name: r.get(6)?,
+            secure: r.get::<_, i64>(7)? != 0,
+            active: r.get::<_, i64>(8)? != 0,
+            sort_order: r.get(9)?,
         })
     })
     .map_err(db_error)?
@@ -528,7 +565,9 @@ pub fn save_organization_location(
     }
     let now = now();
     let id = input.id.unwrap_or_else(new_id);
-    conn.execute("INSERT INTO organization_locations(id,name,street,city,region,postal_code,country,active,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,1,?8) ON CONFLICT(id) DO UPDATE SET name=excluded.name,street=excluded.street,city=excluded.city,region=excluded.region,postal_code=excluded.postal_code,country=excluded.country,active=1",params![id,name,input.street,input.city,input.region,input.postal_code,input.country,now]).map_err(db_error)?;
+    // New sites are active by default. Editing an existing site preserves its
+    // archived state; restoration is an explicit action in settings.
+    conn.execute("INSERT INTO organization_locations(id,name,street,city,region,postal_code,country,active,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,1,?8) ON CONFLICT(id) DO UPDATE SET name=excluded.name,street=excluded.street,city=excluded.city,region=excluded.region,postal_code=excluded.postal_code,country=excluded.country",params![id,name,input.street,input.city,input.region,input.postal_code,input.country,now]).map_err(db_error)?;
     organization_locations(conn, true)?
         .into_iter()
         .find(|l| l.id == id)
@@ -1160,11 +1199,16 @@ pub fn match_candidates(
         if score > 0 && review_status != "dismissed" && review_status != "confirmed" {
             tx.execute("INSERT INTO match_reviews(id,lost_report_id,found_item_id,status,score,explanation,updated_at) VALUES(?1,?2,?3,'suggested',?4,?5,?6) ON CONFLICT(lost_report_id,found_item_id) DO UPDATE SET score=excluded.score,explanation=excluded.explanation,updated_at=excluded.updated_at WHERE match_reviews.status='suggested'",params![review_id,report_id,item.id,score,explanation.join(" · "),now()]).map_err(db_error)?;
         }
+        let competing_claims = {
+            let mut stmt = tx.prepare("SELECT r.id,r.reference,r.claimant_name,r.name,m.status,m.score FROM match_reviews m JOIN lost_reports r ON r.id=m.lost_report_id WHERE m.found_item_id=?1 AND r.id<>?2 AND r.status='open' AND m.status IN ('suggested','confirmed') ORDER BY CASE m.status WHEN 'confirmed' THEN 0 ELSE 1 END,m.score DESC,r.created_at").map_err(db_error)?;
+            stmt.query_map(params![item.id, report_id], |r| Ok(CompetingClaim { report_id:r.get(0)?, reference:r.get(1)?, claimant_name:r.get(2)?, item_name:r.get(3)?, status:r.get(4)?, score:r.get(5)? })).map_err(db_error)?.collect::<Result<Vec<_>,_>>().map_err(db_error)?
+        };
         candidates.push(MatchCandidate {
             found_item: item,
             score,
             explanation,
             review_status,
+            competing_claims,
         });
     }
     tx.commit().map_err(db_error)?;
@@ -1249,6 +1293,43 @@ pub fn review_match(
         &staff,
         serde_json::json!({"foundItemId":item_id,"status":status,"score":score}),
     )?;
+    tx.commit().map_err(db_error)
+}
+
+pub fn adjudicate_match(
+    conn: &mut Connection,
+    report_id: &str,
+    item_id: &str,
+) -> Result<(), String> {
+    let staff = current_staff_name(conn).unwrap_or_default();
+    let tx = conn.transaction().map_err(db_error)?;
+    let winner: Option<(String, String, i64)> = tx.query_row(
+        "SELECT r.reference,r.claimant_name,i.status='in_custody' FROM lost_reports r JOIN found_items i ON i.id=?2 WHERE r.id=?1 AND r.status='open'",
+        params![report_id, item_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    ).optional().map_err(db_error)?;
+    let Some((reference, claimant, in_custody)) = winner else {
+        return Err("Only an open lost report and found item can be adjudicated.".into());
+    };
+    if in_custody == 0 {
+        return Err("The found item is no longer in custody.".into());
+    }
+    let score: i64 = tx.query_row(
+        "SELECT COALESCE((SELECT score FROM match_reviews WHERE lost_report_id=?1 AND found_item_id=?2),0)",
+        params![report_id,item_id], |r| r.get(0),
+    ).map_err(db_error)?;
+    let competing = {
+        let mut stmt = tx.prepare("SELECT r.id,r.reference,r.claimant_name FROM match_reviews m JOIN lost_reports r ON r.id=m.lost_report_id WHERE m.found_item_id=?1 AND r.id<>?2 AND m.status IN ('suggested','confirmed')").map_err(db_error)?;
+        stmt.query_map(params![item_id, report_id], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(db_error)?.collect::<Result<Vec<_>,_>>().map_err(db_error)?
+    };
+    let timestamp = now();
+    for (other_id, other_reference, other_claimant) in competing {
+        tx.execute("UPDATE match_reviews SET status='dismissed',updated_at=?1 WHERE lost_report_id=?2 AND found_item_id=?3",params![timestamp,other_id,item_id]).map_err(db_error)?;
+        insert_event(&tx,"lost_report",&other_id,"competing_claim_dismissed",&timestamp,&staff,serde_json::json!({"foundItemId":item_id,"selectedReportId":report_id,"selectedReference":reference}))?;
+        insert_event(&tx,"found_item",item_id,"competing_claim_dismissed",&timestamp,&staff,serde_json::json!({"reportId":other_id,"reference":other_reference,"claimantName":other_claimant,"selectedReportId":report_id}))?;
+    }
+    tx.execute("INSERT INTO match_reviews(id,lost_report_id,found_item_id,status,score,updated_at) VALUES(?1,?2,?3,'confirmed',?4,?5) ON CONFLICT(lost_report_id,found_item_id) DO UPDATE SET status='confirmed',updated_at=excluded.updated_at",params![new_id(),report_id,item_id,score,timestamp]).map_err(db_error)?;
+    insert_event(&tx,"lost_report",report_id,"match_reviewed",&timestamp,&staff,serde_json::json!({"foundItemId":item_id,"status":"confirmed","score":score,"adjudicated":true}))?;
+    insert_event(&tx,"found_item",item_id,"claim_adjudicated",&timestamp,&staff,serde_json::json!({"reportId":report_id,"reference":reference,"claimantName":claimant}))?;
     tx.commit().map_err(db_error)
 }
 

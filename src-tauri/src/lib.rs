@@ -13,6 +13,7 @@ use std::{
     sync::Mutex,
 };
 use tauri::{Manager, State};
+use tauri_plugin_dialog::DialogExt;
 
 struct AppState {
     db: Mutex<Connection>,
@@ -38,6 +39,41 @@ fn with_db_mut<T>(
         .lock()
         .map_err(|_| "The database is busy. Please try again.".to_string())?;
     f(&mut db)
+}
+
+fn managed_photo_path(data_dir: &Path, relative: &str) -> Result<PathBuf, String> {
+    let relative_path = Path::new(relative);
+    if relative_path.is_absolute()
+        || relative_path
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+        || relative_path.components().next() != Some(std::path::Component::Normal("photos".as_ref()))
+    {
+        return Err("Invalid photo reference.".into());
+    }
+
+    let photo_root = data_dir.join("photos");
+    let mut current = data_dir.to_path_buf();
+    for component in relative_path.components() {
+        let std::path::Component::Normal(part) = component else {
+            return Err("Invalid photo reference.".into());
+        };
+        current.push(part);
+        let metadata = std::fs::symlink_metadata(&current)
+            .map_err(|_| "Stored photo is missing.".to_string())?;
+        if metadata.file_type().is_symlink() {
+            return Err("Photo storage cannot contain linked files.".into());
+        }
+    }
+
+    let canonical_root = std::fs::canonicalize(photo_root)
+        .map_err(|_| "Photo storage is missing.".to_string())?;
+    let canonical_path = std::fs::canonicalize(current)
+        .map_err(|_| "Stored photo is missing.".to_string())?;
+    if !canonical_path.starts_with(canonical_root) || !canonical_path.is_file() {
+        return Err("Invalid photo reference.".into());
+    }
+    Ok(canonical_path)
 }
 
 #[derive(Serialize)]
@@ -170,6 +206,19 @@ fn save_storage_location(
                             .into(),
                     );
                 }
+            }
+        }
+        if let Some(site_id) = &input.organization_location_id {
+            let active: Option<i64> = conn
+                .query_row(
+                    "SELECT active FROM organization_locations WHERE id=?1",
+                    [site_id],
+                    |r| r.get(0),
+                )
+                .optional()
+                .map_err(db::db_error)?;
+            if active != Some(1) {
+                return Err("Choose an active organization location.".into());
             }
         }
         if input
@@ -347,6 +396,17 @@ fn review_match(
 }
 
 #[tauri::command]
+fn adjudicate_match(
+    state: State<'_, AppState>,
+    lost_report_id: String,
+    found_item_id: String,
+) -> Result<(), String> {
+    with_db_mut(&state, |conn| {
+        db::adjudicate_match(conn, &lost_report_id, &found_item_id)
+    })
+}
+
+#[tauri::command]
 fn item_activity(
     state: State<'_, AppState>,
     record_type: String,
@@ -372,19 +432,37 @@ fn item_activity(
     })
 }
 
+fn decode_photo_data_url(photo_data_url: &str) -> Result<(Vec<u8>, image::ImageFormat), String> {
+    let (header, encoded) = photo_data_url
+        .split_once(',')
+        .ok_or_else(|| "Choose a PNG, JPEG, or WebP image.".to_string())?;
+    let declared_mime = match header {
+        "data:image/png;base64" => ("image/png", image::ImageFormat::Png),
+        "data:image/jpeg;base64" => ("image/jpeg", image::ImageFormat::Jpeg),
+        "data:image/webp;base64" => ("image/webp", image::ImageFormat::WebP),
+        _ => return Err("Choose a PNG, JPEG, or WebP image.".into()),
+    };
+    if encoded.len() > 20 * 1024 * 1024 {
+        return Err("Choose an image smaller than 15 MB.".into());
+    }
+    let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encoded)
+        .map_err(|_| "Choose a PNG, JPEG, or WebP image.".to_string())?;
+    if bytes.is_empty() || bytes.len() > 15 * 1024 * 1024 {
+        return Err("Choose an image smaller than 15 MB.".into());
+    }
+    Ok((bytes, declared_mime.1))
+}
+
 #[tauri::command]
 fn import_item_photo(
     state: State<'_, AppState>,
     item_id: String,
-    source_path: String,
+    photo_data_url: String,
 ) -> Result<db::PhotoRecord, String> {
-    let source = Path::new(&source_path);
-    let metadata =
-        std::fs::metadata(source).map_err(|e| format!("Could not open selected photo: {e}"))?;
-    if metadata.len() == 0 || metadata.len() > 15 * 1024 * 1024 {
-        return Err("Choose an image smaller than 15 MB.".into());
+    if uuid::Uuid::parse_str(&item_id).is_err() {
+        return Err("Invalid item reference.".into());
     }
-    let bytes = std::fs::read(source).map_err(|e| format!("Could not read selected photo: {e}"))?;
+    let (bytes, declared_format) = decode_photo_data_url(&photo_data_url)?;
     let mut reader = image::ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
         .map_err(|_| "Choose a PNG, JPEG, or WebP image.".to_string())?;
@@ -397,6 +475,9 @@ fn import_item_photo(
     ) {
         return Err("Choose a PNG, JPEG, or WebP image.".into());
     }
+    if format != declared_format {
+        return Err("The selected image type does not match its contents.".into());
+    }
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(12000);
     limits.max_image_height = Some(12000);
@@ -408,8 +489,21 @@ fn import_item_photo(
     let photo_id = db::new_id();
     let relative_dir = PathBuf::from("photos").join(&item_id);
     let directory = state._data_dir.join(&relative_dir);
+    let photo_root = state._data_dir.join("photos");
+    if std::fs::symlink_metadata(&photo_root)
+        .is_ok_and(|metadata| metadata.file_type().is_symlink())
+    {
+        return Err("Photo storage cannot contain linked files.".into());
+    }
     std::fs::create_dir_all(&directory)
         .map_err(|e| format!("Could not create photo storage: {e}"))?;
+    if std::fs::symlink_metadata(&directory)
+        .map_err(|e| format!("Could not inspect photo storage: {e}"))?
+        .file_type()
+        .is_symlink()
+    {
+        return Err("Photo storage cannot contain linked files.".into());
+    }
     let original_rel = relative_dir.join(format!("{photo_id}.jpg"));
     let thumb_rel = relative_dir.join(format!("{photo_id}-thumb.jpg"));
     let original_path = state._data_dir.join(&original_rel);
@@ -462,10 +556,7 @@ fn item_photos(state: State<'_, AppState>, item_id: String) -> Result<Vec<PhotoP
     paths
         .into_iter()
         .map(|(id, relative)| {
-            let path = state._data_dir.join(relative);
-            if !path.starts_with(state._data_dir.join("photos")) {
-                return Err("Invalid photo reference.".into());
-            }
+            let path = managed_photo_path(&state._data_dir, &relative)?;
             let bytes =
                 std::fs::read(path).map_err(|e| format!("Could not read stored photo: {e}"))?;
             Ok(PhotoPreview {
@@ -485,8 +576,7 @@ fn remove_item_photo(state: State<'_, AppState>, photo_id: String) -> Result<(),
     if let Some((_, original, thumbnail)) = removed {
         for relative in [original, thumbnail] {
             if !relative.is_empty() {
-                let path = state._data_dir.join(relative);
-                if path.starts_with(state._data_dir.join("photos")) {
+                if let Ok(path) = managed_photo_path(&state._data_dir, &relative) {
                     let _ = std::fs::remove_file(path);
                 }
             }
@@ -496,12 +586,30 @@ fn remove_item_photo(state: State<'_, AppState>, photo_id: String) -> Result<(),
 }
 
 #[tauri::command]
-fn export_backup(
+async fn export_backup(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
-    destination: String,
-) -> Result<backup::Manifest, String> {
-    let path = PathBuf::from(destination);
-    with_db(&state, |conn| backup::create(conn, &state._data_dir, &path))
+) -> Result<Option<backup::Manifest>, String> {
+    let suggested_name = format!(
+        "reclaim-backup-{}.reclaim.zip",
+        chrono::Utc::now().format("%Y-%m-%d")
+    );
+    let selected = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .add_filter("Reclaim backup", &["reclaim.zip", "zip"])
+            .set_file_name(suggested_name)
+            .blocking_save_file()
+    })
+    .await
+    .map_err(|e| format!("Could not open backup destination dialog: {e}"))?;
+    let Some(selected) = selected else {
+        return Ok(None);
+    };
+    let path = selected
+        .into_path()
+        .map_err(|_| "Choose a valid backup destination.".to_string())?;
+    with_db(&state, |conn| backup::create(conn, &state._data_dir, &path)).map(Some)
 }
 
 fn recover_interrupted_restore(data_dir: &Path) -> Result<(), String> {
@@ -509,23 +617,33 @@ fn recover_interrupted_restore(data_dir: &Path) -> Result<(), String> {
     if !marker.exists() {
         return Ok(());
     }
+    let state = std::fs::read_to_string(&marker).map_err(|e| format!("Could not read restore recovery state: {e}"))?;
     let database = data_dir.join("reclaim.sqlite3");
     let old_database = data_dir.join("reclaim.sqlite3.restore-previous");
     let photos = data_dir.join("photos");
     let old_photos = data_dir.join("photos.restore-previous");
-    if old_database.exists() {
+    if state.trim() == "committed" {
+        if old_database.exists() {
+            std::fs::remove_file(&old_database).map_err(|e| e.to_string())?;
+        }
+        if old_photos.exists() {
+            std::fs::remove_dir_all(&old_photos).map_err(|e| e.to_string())?;
+        }
+    } else if old_database.exists() {
         if database.exists() {
             std::fs::remove_file(&database).map_err(|e| e.to_string())?;
         }
         std::fs::rename(&old_database, &database)
             .map_err(|e| format!("Could not recover the previous database: {e}"))?;
-    }
-    if old_photos.exists() {
-        if photos.exists() {
+        if old_photos.exists() {
+            if photos.exists() {
+                std::fs::remove_dir_all(&photos).map_err(|e| e.to_string())?;
+            }
+            std::fs::rename(&old_photos, &photos)
+                .map_err(|e| format!("Could not recover previous item photos: {e}"))?;
+        } else if state.trim() == "pending:photos=0" && photos.exists() {
             std::fs::remove_dir_all(&photos).map_err(|e| e.to_string())?;
         }
-        std::fs::rename(&old_photos, &photos)
-            .map_err(|e| format!("Could not recover previous item photos: {e}"))?;
     }
     let _ = std::fs::remove_file(data_dir.join("reclaim.sqlite3-wal"));
     let _ = std::fs::remove_file(data_dir.join("reclaim.sqlite3-shm"));
@@ -542,9 +660,34 @@ fn recover_interrupted_restore(data_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn mark_restore_committed(data_dir: &Path) -> Result<(), String> {
+    let marker = data_dir.join("restore.in-progress");
+    let temporary = data_dir.join(".restore-commit-marker.tmp");
+    let mut file = std::fs::File::create(&temporary).map_err(|e| e.to_string())?;
+    use std::io::Write;
+    file.write_all(b"committed").map_err(|e| e.to_string())?;
+    file.sync_all().map_err(|e| e.to_string())?;
+    std::fs::rename(&temporary, &marker).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
-fn restore_backup(state: State<'_, AppState>, source: String) -> Result<(), String> {
-    let stage = backup::stage_restore(Path::new(&source), &state._data_dir)?;
+async fn restore_backup(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<bool, String> {
+    let selected = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .add_filter("Reclaim backup", &["reclaim.zip", "zip"])
+            .blocking_pick_file()
+    })
+    .await
+    .map_err(|e| format!("Could not open backup selection dialog: {e}"))?;
+    let Some(selected) = selected else {
+        return Ok(false);
+    };
+    let source = selected
+        .into_path()
+        .map_err(|_| "Choose a valid Reclaim backup.".to_string())?;
+    let stage = backup::stage_restore(&source, &state._data_dir)?;
     let db_path = state._data_dir.join("reclaim.sqlite3");
     let previous_db = state._data_dir.join("reclaim.sqlite3.restore-previous");
     let photos = state._data_dir.join("photos");
@@ -577,7 +720,8 @@ fn restore_backup(state: State<'_, AppState>, source: String) -> Result<(), Stri
     drop(old);
 
     let install = (|| -> Result<Connection, String> {
-        std::fs::write(&marker, b"restore").map_err(|e| e.to_string())?;
+        let had_photos = photos.exists();
+        std::fs::write(&marker, if had_photos { b"pending:photos=1" } else { b"pending:photos=0" }).map_err(|e| e.to_string())?;
         if previous_db.exists() {
             std::fs::remove_file(&previous_db).map_err(|e| e.to_string())?;
         }
@@ -596,7 +740,9 @@ fn restore_backup(state: State<'_, AppState>, source: String) -> Result<(), Stri
             std::fs::rename(&staged_photos, &photos)
                 .map_err(|e| format!("Could not install restored photos: {e}"))?;
         }
-        db::open_database(&db_path)
+        let restored = db::open_database(&db_path)?;
+        mark_restore_committed(&state._data_dir)?;
+        Ok(restored)
     })();
 
     let result = match install {
@@ -605,7 +751,7 @@ fn restore_backup(state: State<'_, AppState>, source: String) -> Result<(), Stri
             let _ = std::fs::remove_file(&previous_db);
             let _ = std::fs::remove_dir_all(&previous_photos);
             let _ = std::fs::remove_file(&marker);
-            Ok(())
+            Ok(true)
         }
         Err(error) => {
             let recovery = recover_interrupted_restore(&state._data_dir);
@@ -798,6 +944,7 @@ pub fn run() {
             dispose_found_item,
             matching_candidates,
             review_match,
+            adjudicate_match,
             item_activity,
             import_item_photo,
             item_photos,
@@ -822,6 +969,28 @@ mod tests {
 
     fn test_hours() -> String {
         r#"[{"day":"Monday","closed":false,"opens":"09:00","closes":"17:00","overnight":false},{"day":"Tuesday","closed":false,"opens":"09:00","closes":"17:00","overnight":false},{"day":"Wednesday","closed":false,"opens":"09:00","closes":"17:00","overnight":false},{"day":"Thursday","closed":false,"opens":"09:00","closes":"17:00","overnight":false},{"day":"Friday","closed":false,"opens":"09:00","closes":"17:00","overnight":false},{"day":"Saturday","closed":true,"opens":"09:00","closes":"17:00","overnight":false},{"day":"Sunday","closed":true,"opens":"09:00","closes":"17:00","overnight":false}]"#.into()
+    }
+
+    #[test]
+    fn photo_bytes_require_supported_mime_and_valid_base64() {
+        let data = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/qacAAAAASUVORK5CYII=";
+        let (bytes, format) = decode_photo_data_url(data).unwrap();
+        assert!(!bytes.is_empty());
+        assert_eq!(format, image::ImageFormat::Png);
+        assert!(decode_photo_data_url("data:image/svg+xml;base64,PHN2Zy8+").is_err());
+        assert!(decode_photo_data_url("data:image/png;base64,not-base64!").is_err());
+    }
+
+    #[test]
+    fn managed_photo_reads_reject_paths_outside_photo_storage() {
+        let root = std::env::temp_dir().join(format!("reclaim-photo-path-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("photos/item-a")).unwrap();
+        std::fs::write(root.join("photos/item-a/photo.jpg"), b"photo").unwrap();
+        std::fs::write(root.join("private.txt"), b"private").unwrap();
+        assert!(managed_photo_path(&root, "photos/item-a/photo.jpg").is_ok());
+        assert!(managed_photo_path(&root, "photos/../../private.txt").is_err());
+        assert!(managed_photo_path(&root, "private.txt").is_err());
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -857,6 +1026,42 @@ mod tests {
         );
         assert!(!root.join("restore.in-progress").exists());
         assert!(!root.join(".restore-stage").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn committed_restore_keeps_new_pair_when_cleanup_was_interrupted() {
+        let root = std::env::temp_dir().join(format!("reclaim-restore-commit-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("photos")).unwrap();
+        std::fs::create_dir_all(root.join("photos.restore-previous")).unwrap();
+        std::fs::write(root.join("restore.in-progress"), b"committed").unwrap();
+        std::fs::write(root.join("reclaim.sqlite3"), b"new-database").unwrap();
+        std::fs::write(root.join("reclaim.sqlite3.restore-previous"), b"old-database").unwrap();
+        std::fs::write(root.join("photos/new.jpg"), b"new-photo").unwrap();
+        std::fs::write(root.join("photos.restore-previous/old.jpg"), b"old-photo").unwrap();
+
+        recover_interrupted_restore(&root).unwrap();
+
+        assert_eq!(std::fs::read(root.join("reclaim.sqlite3")).unwrap(), b"new-database");
+        assert_eq!(std::fs::read(root.join("photos/new.jpg")).unwrap(), b"new-photo");
+        assert!(!root.join("reclaim.sqlite3.restore-previous").exists());
+        assert!(!root.join("photos.restore-previous").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn interrupted_restore_without_old_photos_removes_partial_new_photos() {
+        let root = std::env::temp_dir().join(format!("reclaim-restore-no-photos-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("photos")).unwrap();
+        std::fs::write(root.join("restore.in-progress"), b"pending:photos=0").unwrap();
+        std::fs::write(root.join("reclaim.sqlite3"), b"new-database").unwrap();
+        std::fs::write(root.join("reclaim.sqlite3.restore-previous"), b"old-database").unwrap();
+        std::fs::write(root.join("photos/new.jpg"), b"partial-photo").unwrap();
+
+        recover_interrupted_restore(&root).unwrap();
+
+        assert_eq!(std::fs::read(root.join("reclaim.sqlite3")).unwrap(), b"old-database");
+        assert!(!root.join("photos").exists());
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -1003,6 +1208,18 @@ mod tests {
         )
         .unwrap();
         assert_eq!(db::organization_locations(&conn, false).unwrap().len(), 2);
+        conn.execute(
+            "INSERT INTO storage_locations(id,name,description,organization_location_id,secure,sort_order,created_at) VALUES('east-annex-locker','Locker room cabinet','',?1,0,99,?2)",
+            rusqlite::params![annex.id, db::now()],
+        )
+        .unwrap();
+        let linked_storage = db::storage_locations(&conn, true)
+            .unwrap()
+            .into_iter()
+            .find(|location| location.id == "east-annex-locker")
+            .unwrap();
+        assert_eq!(linked_storage.organization_location_id.as_deref(), Some(annex.id.as_str()));
+        assert_eq!(linked_storage.organization_location_name.as_deref(), Some("East Annex"));
         assert!(
             db::save_organization_location(
                 &mut conn,
@@ -1281,8 +1498,16 @@ mod tests {
         .unwrap();
         db::review_match(&mut conn, &report.id, &found.id, "confirmed").unwrap();
         assert!(db::review_match(&mut conn, &competing.id, &found.id, "confirmed").is_err());
-        db::review_match(&mut conn, &report.id, &found.id, "dismissed").unwrap();
-        db::review_match(&mut conn, &competing.id, &found.id, "confirmed").unwrap();
+        let candidates = db::match_candidates(&mut conn, &competing.id).unwrap();
+        let competing_candidate = candidates.iter().find(|c| c.found_item.id == found.id).unwrap();
+        assert!(competing_candidate.competing_claims.iter().any(|c| c.report_id == report.id && c.claimant_name == "Alex Smith"));
+        db::adjudicate_match(&mut conn, &competing.id, &found.id).unwrap();
+        let reviews: Vec<(String,String)> = {
+            let mut statement=conn.prepare("SELECT lost_report_id,status FROM match_reviews WHERE found_item_id=?1 ORDER BY lost_report_id").unwrap();
+            statement.query_map([&found.id],|r|Ok((r.get(0)?,r.get(1)?))).unwrap().collect::<Result<Vec<_>,_>>().unwrap()
+        };
+        assert_eq!(reviews.iter().find(|(id,_)| id==&report.id).unwrap().1,"dismissed");
+        assert_eq!(reviews.iter().find(|(id,_)| id==&competing.id).unwrap().1,"confirmed");
         let conflicting_return = db::ReturnInput {
             found_item_id: found.id.clone(),
             lost_report_id: Some(report.id.clone()),

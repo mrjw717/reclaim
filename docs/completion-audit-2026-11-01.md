@@ -1,5 +1,7 @@
 # Reclaim completion audit — 2026-11-01
 
+> Historical checkpoint from the earlier completion pass. Its baseline counts, no-HEAD status, package sizes, and remaining-work list describe that earlier point only. The current repository baseline and RC1 qualification matrix are in [release readiness](release-readiness.md).
+
 ## Verdict
 
 **PARTIALLY COMPLETE.** The frontend production build, automated UI tests, and Rust tests pass. Core product gaps around structured hours, branding, lost-report lifecycle, inventory paging/date filters, claim conflicts, and organization sites received native-backed implementations. Release acceptance is not met because packaged desktop workflows, restart persistence, responsive windows, complete accessibility, theme consistency, and full application controls were not independently qualified.

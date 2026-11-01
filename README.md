@@ -20,7 +20,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 pnpm tauri build --bundles deb,rpm
 ```
 
-The verified Linux `.deb` and `.rpm` bundles are written under `src-tauri/target/release/bundle/`. See [docs/release-readiness.md](docs/release-readiness.md) for current qualification status and known limitations.
+The Linux `.deb` and `.rpm` bundles are written under `src-tauri/target/release/bundle/`. These local build artifacts are not release-qualified until all blockers in [docs/release-readiness.md](docs/release-readiness.md) are cleared.
 
 ## Product documentation
 
@@ -32,3 +32,12 @@ The verified Linux `.deb` and `.rpm` bundles are written under `src-tauri/target
 - [Testing](docs/testing.md)
 - [Backup and restore](docs/backup-restore.md)
 - [Release readiness](docs/release-readiness.md)
+
+## User guides
+
+- [Getting started](docs/user-guide/getting-started.md)
+- [Daily operations](docs/user-guide/daily-operations.md)
+- [Data and backups](docs/user-guide/data-and-backups.md)
+- [Troubleshooting](docs/user-guide/troubleshooting.md)
+- [0.1.0 release notes](docs/release-notes-0.1.0.md)
+- [RC1 qualification matrix](docs/release-readiness.md)

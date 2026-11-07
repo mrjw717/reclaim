@@ -29,3 +29,7 @@ Create organization sites under **Settings → Organization**. Create rooms, cab
 Choose **Register found item**. Enter an item name, category, date and time, and storage location. Add identifying details, finder/contact information, and staff notes when useful. **Add item photo** opens a native file picker; accepted formats are PNG, JPEG, and WebP, up to 15 MB. Select **Save found item** to create the custody record.
 
 The item appears in Found items with a reference number. Select it to review its details, photographs, storage location, and custody history.
+
+## License and legal information
+
+Reclaim is released under the MIT License, copyright Kynex Media — the full text is included with the packages as the Debian `copyright` file and in the repository as `LICENSE`. Bundled open-source components keep their own licenses; the package includes third-party notices generated from the actual dependency list. Data files and backup archives are not encrypted, so keep workstation and backup storage access limited to trusted people.

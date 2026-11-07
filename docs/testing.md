@@ -63,6 +63,68 @@ Current checks after the scroll regression fix: `pnpm test` (13 passed), `pnpm b
 
 An independent source review found a storage status dismiss button without an accessible name and generic “Edit” controls in site/storage rows. Added contextual names and a polite live status announcement. Extended `pnpm check:design` with a TypeScript JSX heuristic for button/form-control names and labels; it caught the dismiss button before the fix and passes afterward. The checker does not calculate browser accessible names or replace screen-reader testing. Reverification after these changes: `pnpm check:design`, `pnpm check:contrast` (134 token pairs), `pnpm test` (13 passed), and `pnpm build` all passed. Rust sources did not change.
 
+### Accessibility sweep, keyboard checks, and theme matrix — 2026-11-07
+
+An axe-core 4.10.3 sweep (`node` CDP driver, no repo dependency) ran against the dev-only fixture preview across 20 rendered screens — dashboard, inventory, item drawer, found-item form, lost reports, match review, storage, retention, six Settings sections, and five onboarding steps — in four theme variants (light, dark, system-dark, system-light) plus dark/light for setup: 70 scans. Initial findings and repairs, all verified by a follow-up zero-violation sweep:
+
+- **serious:** the selected Settings-nav description used `--text-muted` on the brand-tinted `--brand-soft` surface (below 4.5:1); now uses `--text-secondary`, guarded in `pnpm check:contrast` for every curated organization brand (146 token pairs checked).
+- **serious (dark):** the brand-preview button overrode the themed `--brand-accent` with the raw user color, pairing light-theme white text with dark-theme text tokens; it now renders the real themed control.
+- **serious (light setup):** the green eyebrow on the setup canvas measured 4.45:1; `--accent-green-foreground` darkened to `#4e7353` (4.9:1 on canvas) with a new token check.
+- **moderate:** onboarding pages had no `h1` when the decorative aside is hidden at narrow widths; the five step headings are now `h1` elements.
+- **moderate:** the dashboard "Open reports" aside was an unnamed complementary landmark nested in `main`; it now has an accessible name.
+- **minor:** `role="dialog"` is not an allowed override on `<aside>`; the item drawer is now a `div` (CSS and tests unchanged).
+
+Keyboard verification used real Tab/Shift+Tab/Escape key events through CDP in headless Chrome: 10/10 checks pass — focus containment across 40-Tab walks inside the drawer and four modal types, focus restoration to the opening element on close, Escape from a nested dialog returning into the drawer, and visible focus indicators. This uncovered and pinned two real defects (see the adjudication entry below and the modal-focus commit): `ModalFrame` re-captured its focus-restore snapshot on every parent re-render because `onClose` was a fresh inline closure (snapshot now taken during render via a ref; restore verified by `App.test.tsx`), and its Tab trap lacked the drawer's "pull focus back when it escapes" rule.
+
+The visual/theme matrix swept 460 viewport/screen/theme/scale combinations in headless Chrome: window sizes 1024×768, 1280×800, 1440×900, 1920×1080, and the 680×680 minimum at interface scales 1 and 1.3, in light, dark, system-dark, and system-light, over nine main-app views (including open drawer and modals) plus all five onboarding steps. Rendered-layout measurements checked page horizontal scroll, zero-size clipped text (excluding visually hidden elements), and elements escaping their scroll containers past the viewport: zero issues, and screenshots were spot-checked visually. 460 PNGs and the measurement JSON live outside the repository under `/tmp/opencode/visual/`; representative captures are in `docs/evidence/2026-11-07/`.
+
+### Installed-package staff-journey walkthroughs — 2026-11-07
+
+All fifteen journeys were exercised through the installed Debian package in a disposable container (Xvfb + AT-SPI tree + real mouse/keyboard input via xdotool; `reclaim-qa-x11` Debian 13 image) with isolated app-data directories. Screenshots and SQLite state were verified after each phase; representative captures are in `docs/evidence/2026-11-07/`.
+
+1. Fresh onboarding: five-step setup through Review into the workspace; SQLite organization row, complete primary-site address, seeded storage linked to the site, `user_version=3`, `integrity_check=ok`.
+2. Organization logo upload: native GTK chooser → fixture PNG preview in setup and in the saved workspace; 270-byte data URL persisted and re-rendered after restart.
+3. Seven-day operating hours: default schedule saved; in Settings, Saturday opened and its opening hour edited 09:00→10:00 via keyboard; all seven days verified in SQLite after a full restart.
+4. Theme and brand color: Dark and curated blue `#174ea6` from setup persisted (`theme`, `primary_color`) and rendered after restart.
+5. Organization-site management: second site created with the complete six-field address, edited, archived (row `active=0`), restored (`active=1`); last-active-site guard preserved.
+6. Nested storage: secure cabinet linked to the new site plus a child drawer inside it (`parent_id` + site link + secure flag verified).
+7. Found-item registration with photograph: full form via GUI; original + 520px thumbnail written to the managed photo store; `item_photos` row and `item_registered`/`photo_added` events attributed to the staff label.
+8. Item editing and search: drawer edit persisted with `item_updated` event; inventory search returned the correct empty state and hit.
+9. Lost-report lifecycle: created with matching details, edited, closed, reopened — status and attributed events verified in SQLite.
+10. Matching suggestions: score 94/100 candidate with explanation list and ranking-aid disclaimer rendered from live data.
+11. Competing claims, adjudication, verified return: claim selection wrote the confirmed match and `claim_adjudicated`; the return flow required the policy-mandated verification method and note and produced a `item_returned` event; item status `returned`.
+12. Custody history: drawer timeline rendered the attributed event sequence.
+13. Retention and disposition: an item aged past its deadline appeared in Retention review as eligible; disposition recorded through the UI (`status='disposed'`, method, `item_disposed` event). The historical found date for this disposable-profile item was set by direct SQLite update as test-data preparation; the eligibility check and disposition ran through the app.
+14. Backup and restore: native save dialog produced an archive passing `unzip -t` (database + original + thumbnail + manifest); restore into a second disposable profile replaced the sentinel setup with the full workspace (items, photo files, sites, 13 events) verified in SQLite; a truncated archive was rejected in the UI ("Backup archive is damaged or invalid.") with records intact.
+15. Full restart persistence: multiple process restarts on both profiles; the restored workspace re-rendered its dashboard, theme, logo, and inventory after restart.
+
+Harness notes: AT-SPI presses on offscreen checkboxes and HTML select popups do not flip state in WebKitGTK, so those controls were driven by real mouse clicks and keyboard navigation; time inputs were edited by focusing segments and typing. One journey data point (finder contact) was lost to a chooser-automation interleave, not an app defect.
+
+### Adjudication confirmation defect found and fixed — 2026-11-07
+
+The installed-app walkthrough exposed a real defect: selecting a leading claim used `window.confirm`, which WebKitGTK under Tauri does not block — the dialog appeared while execution continued, the adjudication was written immediately, and choosing Cancel left `match_reviews` `confirmed` with no rollback (reproduced in the packaged app before the fix, verified fixed after: Cancel leaves the suggestion untouched, OK writes `claim_adjudicated`). The flow now uses the plugin-dialog native `confirm()` (as restore already did) with `dialog:allow-ask`/`dialog:allow-confirm` capabilities, and `src/App.test.tsx` covers the declined and accepted paths (23 frontend tests).
+
+### Final package qualification — 2026-11-07
+
+Final artifacts rebuilt from the fixed source (`pnpm tauri build --bundles deb,rpm`, then `scripts/patch-deb-license.sh` for the Debian license files — see the licensing section):
+
+| Artifact | Size | SHA-256 |
+|---|---:|---|
+| `Reclaim_0.1.0_amd64.deb` | 4,337,404 bytes | `072ad041805b22222708ef41409a826e7389b7c6f4d34956ca6d5dff97fa34f5` |
+| `Reclaim-0.1.0-1.x86_64.rpm` | 4,429,001 bytes | `080bffc76e5438aa63e01592757ec388bc64ef577ab5578cbe71a426daf2a909` |
+| `Reclaim_0.1.0_amd64.AppImage` | 88,005,112 bytes | `2ef611251670b8a1b11e764892d2aadc157e2dcbd49659aea8e11ce2d5ff8b53` |
+
+(Hashes in `src-tauri/target/release/bundle/SHA256SUMS` pass `sha256sum -c`; the deb hash covers the license-patched bundle.)
+
+- **Debian 13**: upgrade install over the previous build preserved all records and integrity; `/usr/share/doc/reclaim/copyright` and `THIRD_PARTY_NOTICES.gz` ship in the payload (verified by payload inspection, `dpkg-deb -x` in a pristine container, and post-upgrade on-disk check — note Docker-slimmed images exclude doc files via dpkg path-exclude, which is a container artifact, not a package defect); `Maintainer: Kynex Media` and a real long description now appear in the control file; `gtk-launch reclaim` (desktop-entry resolution) opened the main window; `dpkg -r reclaim` removed the package while user data (integrity ok, items and custody history) remained.
+- **Fedora 44** (this is the current-bytes rerun that replaced the 2026-11-02 evidence): `dnf install` of the exact rebuilt RPM, launch under Xvfb with an isolated HOME, database initialized (`integrity_check=ok`, `user_version=3`, 17 starter categories), `License: MIT` tag present with no signature, `rpm -e reclaim` removed the package and the database with its 17 categories remained.
+- **AppImage**: builds successfully now that the release toolchain is warm (the earlier timeout was a cold optimized compile): 83.93 MiB artifact, `--appimage-extract-and-run` launches on its build baseline (Ubuntu 26.04/glibc 2.43 with the standard WebKitGTK runtime deps) and initializes a healthy database. **It is not portable to older distributions**: bundled libraries require GLIBC 2.43, and it fails on Debian 13. Qualified distribution artifacts for this beta remain the Debian and RPM packages; a portable AppImage would need an older-baseline build environment (owner decision).
+- Desktop-menu invocation was verified through `gtk-launch` desktop-entry resolution in the Debian container; a full interactive desktop-shell menu click was not performed.
+
+### Security and data-integrity review — 2026-11-07
+
+Review of the native layer against the release checklist, with no new defects requiring code changes: SQLite uses foreign keys, CHECK constraints, partial unique indexes, versioned transactional migrations with a future-version guard, WAL with synchronous NORMAL and `secure_delete=ON`; photo imports enforce MIME allowlist, declared-vs-sniffed format matching, 15 MB and decode-dimension limits, symlink rejection, canonicalized path containment (`managed_photo_path`, covered by an existing traversal test), and file cleanup on failure; backup archives enforce size caps, safe relative paths, digest verification, reserved-name and entry-count limits, and `create_new` staging; restore uses a marker-file protocol with prior-pair recovery covered by native tests; disposition intentionally retains records and photos as documented history; Tauri capabilities are minimal (`core:default`, `opener:default`, dialog message/ask/confirm — file pickers are Rust-owned); the only stderr logging carries SQL error text, not claimant or contact data. Earlier sessions' findings (staff attribution hardening, photo validation) remain in place.
+
 ### Current Debian package startup and removal — 2026-11-01
 
 Built current-source Debian/RPM bundles with `pnpm tauri build --bundles deb,rpm`; both output files passed checksum verification after refreshing the generated `SHA256SUMS` manifest. Installed the current `.deb` in a disposable Debian 13 `stable-slim` container and the current `.rpm` in a disposable Fedora 44 container. Started each under Xvfb for 15 seconds to allow first-run initialization, then removed each package with the native package manager. Each app database passed SQLite `PRAGMA integrity_check` and contained 17 starter categories both before and after removal; each package was absent after removal. Both package payloads contain `/usr/bin/reclaim`, the desktop entry `/usr/share/applications/Reclaim.desktop` (`Exec=reclaim`, `Icon=reclaim`, `Name=Reclaim`, `Terminal=false`), and the Reclaim icons; the binary started from each installed package. Fedora 44 `rpm -qpi` reports RPM name `reclaim`, version `0.1.0`, release `1`, architecture `x86_64`, an empty License field, and no signature. Debian metadata reports `reclaim`, version `0.1.0`, architecture `amd64`, with no License field. These checks verify basic startup and data retention, not desktop-menu invocation or full workflow behavior. No host app-data was touched. The documented manual update path covers backup, closing, package installation, restart migrations, and retaining user data; version-to-version upgrades were not tested and automatic updates remain unconfigured.

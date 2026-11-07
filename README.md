@@ -22,6 +22,11 @@ pnpm tauri build --bundles deb,rpm
 
 The Linux `.deb` and `.rpm` bundles are written under `src-tauri/target/release/bundle/`. These local build artifacts are not release-qualified until all blockers in [docs/release-readiness.md](docs/release-readiness.md) are cleared.
 
+## License
+
+Reclaim is licensed under the MIT License. See [LICENSE](LICENSE). Copyright (c) 2026 Kynex Media.
+Third-party components are covered by their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), generated from the actual dependency graph by `scripts/generate-notices.mjs`.
+
 ## Product documentation
 
 - [Architecture](docs/architecture.md)

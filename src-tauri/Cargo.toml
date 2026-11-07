@@ -2,7 +2,8 @@
 name = "reclaim"
 version = "0.1.0"
 description = "Local lost and found management for organizations"
-authors = ["Reclaim contributors"]
+authors = ["Kynex Media"]
+license = "MIT"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

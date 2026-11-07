@@ -209,6 +209,22 @@ describe("Reclaim application journeys", () => {
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("set_organization_location_active", { id: "site-1", active: true }));
   });
 
+  it("restores focus to the opener after a re-render and Escape closes the found-item modal", async () => {
+    initialized = true;
+    const first = render(<App />);
+    const opener = (await screen.findAllByRole("button", { name: /register found item/i }))[0];
+    opener.focus();
+    fireEvent.click(opener);
+    expect(await screen.findByRole("dialog", { name: "Register a found item" })).toBeInTheDocument();
+    // A parent re-render passes a fresh inline onClose to ModalFrame; the focus
+    // restore snapshot must survive it (regression: prior was re-captured
+    // inside the dialog, so Escape left focus on document.body).
+    first.rerender(<App />);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Register a found item" })).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(opener);
+  });
+
   it("opens the found-item form and submits its validated record to native persistence", async () => {
     initialized = true;
     render(<App />);
@@ -321,6 +337,12 @@ describe("Reclaim application journeys", () => {
       // Auto-placement dropped .lost-actions into the 35px avatar column
       // between 781 and 1000 px, crushing its buttons.
       expect(appCss).toContain(".lost-actions { grid-column: 2 / -1; justify-self: start; margin-bottom: 10px; }");
+    });
+    it("keeps selected settings-nav descriptions readable on brand-tinted surfaces", () => {
+      // --text-muted sits below 4.5:1 on --brand-soft (the selected item's
+      // brand-tinted background); the darker secondary token passes for every
+      // curated organization brand (guarded by pnpm check:contrast).
+      expect(appCss).toContain(".settings-nav button.selected > small { color: var(--text-secondary); }");
     });
   });
 

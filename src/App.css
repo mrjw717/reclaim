@@ -232,6 +232,7 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .settings-nav button.selected { background: var(--brand-soft); color: var(--brand-accent); }
 .settings-nav button > span { grid-column: 1; font-size: calc(max(12px, 10px) * var(--reclaim-ui-scale, 1)); font-weight: 700; }
 .settings-nav button > small { grid-column: 1; color: var(--text-muted); font-size: calc(max(12px, 8px) * var(--reclaim-ui-scale, 1)); }
+.settings-nav button.selected > small { color: var(--text-secondary); }
 .settings-nav button > svg { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: var(--text-muted); }
 .settings-nav button.selected > svg { color: var(--text-muted); }
 .settings-panel { min-height: 420px; overflow: hidden; }
@@ -340,7 +341,7 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .step-progress .complete span { color: var(--text-secondary); }
 .setup-form-content { width: 100%; max-width: 500px; margin: auto auto; padding: 33px 0 28px; }
 .setup-form-content > .eyebrow { color: var(--accent-green-foreground); }
-.setup-form-content h2 { margin: 8px 0 6px; font: 700 calc(max(12px, 25px) * var(--reclaim-ui-scale, 1))/1.25 Manrope,sans-serif; letter-spacing: -.8px; }
+.setup-form-content h1 { margin: 8px 0 6px; font: 700 calc(max(12px, 25px) * var(--reclaim-ui-scale, 1))/1.25 Manrope,sans-serif; letter-spacing: -.8px; }
 .setup-form-content > p { margin: 0 0 23px; color: var(--text-muted); font-size: calc(max(12px, 11px) * var(--reclaim-ui-scale, 1)); line-height: 1.55; }
 .setup-form-content > .field { margin: 0 0 14px; }
 .setup-form-content .form-grid { padding: 1px 0; margin: 0; gap: 13px 12px; }

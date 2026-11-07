@@ -35,6 +35,16 @@ const handlers: Record<string, CommandHandler> = {
   list_categories: () => [category, drinkware],
 };
 
+// `preview.html?setup=1` renders the first-run onboarding wizard by withholding
+// the fixture organization, letting visual/accessibility sweeps exercise the
+// setup screens in a plain browser. Development only; no native behavior changes.
+handlers.bootstrap = () => ({
+  organization: new URLSearchParams(window.location.search).has("setup") ? null : organization,
+  categories: [category, drinkware],
+  storageLocations: [storage, secureStorage, longStorage],
+  stats: emptyStats,
+});
+
 export function installPreviewBridge(): void {
   const internals = (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ as Record<string, unknown> | undefined;
   if (internals) return; // Real Tauri backend present; leave it alone.

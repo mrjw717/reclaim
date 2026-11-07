@@ -64,14 +64,17 @@ for (const [scheme, values] of [["light", light], ["dark", dark]]) {
       check(`${scheme} ${foreground} on ${background}`, contrast(requireToken(values, foreground, scheme), requireToken(values, background, scheme)), 4.5);
     }
   }
+  check(`${scheme} setup eyebrow green on canvas`, contrast(requireToken(values, "--accent-green-foreground", scheme), requireToken(values, "--surface-canvas", scheme)), 4.5);
   check(`${scheme} danger text`, contrast(requireToken(values, "--state-danger-foreground", scheme), requireToken(values, "--surface-primary", scheme)), 4.5);
 
   const brandText = requireToken(values, "--text-on-brand", scheme);
   for (const brand of palettes) {
     const accent = scheme === "dark" ? mix(brand, "#ffffff", 0.48) : brand;
     const hover = scheme === "dark" ? mix(accent, "#000000", 0.1) : mix(brand, "#000000", 0.15);
+    const brandSoft = mix(requireToken(values, "--surface-canvas", scheme), brand, scheme === "dark" ? 0.22 : 0.1);
     check(`${scheme} brand text on ${brand}`, contrast(brandText, accent), 4.5);
     check(`${scheme} brand hover text on ${brand}`, contrast(brandText, hover), 4.5);
+    check(`${scheme} selected settings-nav description on brand-soft ${brand}`, contrast(requireToken(values, "--text-secondary", scheme), brandSoft), 4.5);
     for (const background of ["--surface-canvas", "--surface-primary", "--surface-secondary", "--surface-hover", "--surface-selected"]) {
       check(`${scheme} focus indicator ${brand} on ${background}`, contrast(accent, requireToken(values, background, scheme)), 3);
     }

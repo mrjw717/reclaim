@@ -12,6 +12,13 @@ const appCss = readFileSync(resolve(process.cwd(), "src/App.css"), "utf8");
 
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
+const { confirmMock } = vi.hoisted(() => ({ confirmMock: vi.fn(async () => true) }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  confirm: confirmMock,
+  message: vi.fn(async () => undefined),
+  open: vi.fn(),
+  save: vi.fn(),
+}));
 
 const category = { id: "other", name: "Other / Uncategorized", description: "", icon: "Package", active: true, sortOrder: 0, retentionDays: null };
 const organization = { id: "org-1", name: "Northside Center", organizationType: "Community center", phone: "", email: "", street: "", city: "", region: "", postalCode: "", country: "US", operatingHours: "", locale: "en-US", dateFormat: "MMM d, yyyy", retentionDays: 30, requireVerification: true, allowAnonymousFinders: true, theme: "system" as const, primaryColor: DEFAULT_BRAND_COLOR, logoDataUrl: null };
@@ -223,6 +230,32 @@ describe("Reclaim application journeys", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Register a found item" })).not.toBeInTheDocument();
     expect(document.activeElement).toBe(opener);
+  });
+
+  it("only adjudicates a confirmed claim when the native confirm dialog is accepted", async () => {
+    initialized = true;
+    const previous = invokeMock.getMockImplementation()!;
+    const lost = { id: "lost-9", reference: "RCL-9", name: "Blue insulated water bottle", categoryId: "drinkware", categoryName: "Drinkware", description: "Blue bottle", color: "Blue", brand: "", lostAt: "2026-11-06T10:00", lastLocation: "East Gymnasium", claimantName: "Taylor Reed", contact: "taylor@example.test", notes: "", status: "open", createdAt: "2026-11-06T10:00" };
+    const item = { id: "item-9", reference: "RCM-9", name: "Blue insulated water bottle", categoryId: "drinkware", categoryName: "Drinkware", description: "Blue bottle", color: "Blue", brand: "", foundAt: "2026-11-07T09:00", foundLocation: "East Gymnasium", storageLocationId: "loc-1", storageLocation: "Front Desk", storageSecure: false, finderName: "", finderContact: "", staffNotes: "", status: "in_custody", retentionDays: null, returnedAt: null, disposedAt: null, createdAt: "2026-11-07T09:00" };
+    invokeMock.mockImplementation(async (command: string, args: Record<string, unknown> = {}) => {
+      if (command === "list_lost_reports") return [lost];
+      if (command === "matching_candidates") return [{ foundItem: item, score: 91, explanation: ["Category matches"], reviewStatus: "suggested", competingClaims: [] }];
+      return previous(command, args);
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: /Good morning/i });
+    fireEvent.click(screen.getByRole("button", { name: "Lost reports" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Review matches" }));
+    // Declining the native confirmation must not write the adjudication.
+    confirmMock.mockResolvedValueOnce(false);
+    fireEvent.click(await screen.findByRole("button", { name: /Select this claim/i }));
+    await waitFor(() => expect(confirmMock).toHaveBeenCalled());
+    expect(invokeMock).toHaveBeenCalledWith("matching_candidates", { lostReportId: "lost-9" });
+    expect(invokeMock).not.toHaveBeenCalledWith("adjudicate_match", { foundItemId: "item-9", lostReportId: "lost-9" });
+    confirmMock.mockResolvedValueOnce(true);
+    fireEvent.click(await screen.findByRole("button", { name: /Select this claim/i }));
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("adjudicate_match", { foundItemId: "item-9", lostReportId: "lost-9" }));
+    invokeMock.mockImplementation(previous);
   });
 
   it("opens the found-item form and submits its validated record to native persistence", async () => {

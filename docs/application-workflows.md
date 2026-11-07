@@ -2,7 +2,7 @@
 
 ## First run
 
-If no organization exists, a four-step wizard collects organization identity and optional local logo, primary site, appearance, seven-day operating hours, retention and verification defaults, and a final review. Organization preferences are stored in SQLite; returning to earlier steps retains the in-memory draft. Setup seeds default categories and storage areas.
+If no organization exists, a five-step wizard collects organization identity and optional local logo, primary site, appearance, seven-day operating hours, retention and verification defaults, and a final review. Organization preferences are stored in SQLite; returning to earlier steps retains the in-memory draft. Setup seeds default categories and storage areas.
 
 Operating hours are structured JSON, ordered Monday through Sunday. Each day can be opened/closed independently and supports one interval, including an explicitly marked overnight interval. Multiple intervals per day are not supported. Existing free-text hours are retained in `legacy_operating_hours` for staff to review after migration.
 
@@ -16,11 +16,11 @@ Reports can be edited, closed, and reopened while unresolved. Reopening a resolv
 
 ## Organization settings
 
-Settings include organization profile, logo and brand color, structured hours, organization sites (add/archive/restore), categories, storage areas, policy defaults, backup/restore, staff attribution label, and theme. Theme and brand settings are saved to SQLite and included in backups.
+Settings include organization profile, logo and brand color, structured hours, organization sites (add/edit/archive/restore), categories, storage areas, policy defaults, backup/restore, staff attribution label, and theme. Theme and brand settings are saved to SQLite and included in backups.
 
 ## Development autofill
 
-Development builds expose **Autofill Test Data** on setup, found-item, and new lost-report forms. It uses fictional example data, only fills fields, and never submits. Vite production builds do not render the control. Additional form scenarios are not yet covered.
+Development builds expose **Autofill Test Data** on setup, found-item, and new lost-report forms. It uses fictional example data, only fills fields, and never submits. Found-item examples cover ordinary, matching, high-value, secure-storage, duplicate-candidate, retention-eligible, and invalid-required-field cases; lost-report examples cover ordinary, matching, competing-claim, and invalid-required-field cases. The secure-storage example leaves storage unselected when no active secure area exists, so the required field blocks saving until staff choose a location. Vite production builds replace the control with an empty component.
 
 ## Identity boundary
 

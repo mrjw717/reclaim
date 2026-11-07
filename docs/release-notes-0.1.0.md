@@ -22,7 +22,7 @@ Linux desktop (64-bit x86 packages currently configured for Debian and RPM-based
 - One operating interval per day; split schedules are not supported.
 - Match scores are heuristic and never establish ownership. Staff make the decision.
 - Retention deadlines prompt human review and do not encode local legal requirements.
-- Current native workflow, visual, accessibility, installer, restart-persistence, and recovery qualification remains incomplete. See [release qualification](release-readiness.md) before relying on this candidate.
+- Disposable-profile native checks demonstrate the main workflows, local photo persistence, and process-restart behavior. Current-source Debian/RPM bundles were rebuilt and passed basic install/start/removal and data-retention checks on 2026-11-02. Desktop-menu launch, version-to-version upgrade, full package GUI workflows, visual/accessibility qualification, and recovery edge cases remain incomplete. See [release qualification](release-readiness.md) before relying on this candidate.
 
 ## Installation and upgrade
 

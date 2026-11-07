@@ -10,7 +10,8 @@
     "test:watch": "vitest",
     "preview": "vite preview",
     "tauri": "tauri",
-    "check:design": "node scripts/check-design.mjs"
+    "check:design": "node scripts/check-design.mjs",
+    "check:contrast": "node scripts/check-contrast.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

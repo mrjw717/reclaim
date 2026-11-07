@@ -14,7 +14,7 @@ One lost report can have many candidate found items; one found item can be consi
 
 Found item: `in_custody` → `returned` or `disposed`. A returned or disposed item is retained as history and cannot be transitioned a second time. Return validation checks custody state and requires a method when organization policy or secure storage calls for verification. Disposition requires a staff action after the calculated review date.
 
-Lost report: `open`, `resolved`, or `closed`. Current UI creates and searches reports and reviews candidate matches; report editing and lifecycle controls are not yet available.
+Lost report: `open`, `resolved`, or `closed`. The UI creates, searches, and edits unresolved reports; staff can close an open report and reopen a closed or resolved report. Editing a resolved report requires reopening it first.
 
 ## References and history
 

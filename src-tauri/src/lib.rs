@@ -349,7 +349,7 @@ fn move_found_item(
     storage_location_id: String,
 ) -> Result<(), String> {
     with_db_mut(&state, |conn| {
-        let staff = db::current_staff_name(conn).unwrap_or_default();
+        let staff = db::current_staff_name(conn)?;
         db::move_found(conn, &id, &storage_location_id, &staff)
     })
 }
@@ -358,7 +358,7 @@ fn move_found_item(
 fn return_found_item(state: State<'_, AppState>, input: db::ReturnInput) -> Result<(), String> {
     with_db_mut(&state, |conn| {
         let required = db::organization(conn)?.is_some_and(|org| org.require_verification);
-        let staff = db::current_staff_name(conn).unwrap_or_default();
+        let staff = db::current_staff_name(conn)?;
         db::return_found(conn, input, required, &staff)
     })
 }
@@ -370,7 +370,7 @@ fn dispose_found_item(
     method: String,
 ) -> Result<(), String> {
     with_db_mut(&state, |conn| {
-        let staff = db::current_staff_name(conn).unwrap_or_default();
+        let staff = db::current_staff_name(conn)?;
         db::dispose_found(conn, &id, &method, &staff)
     })
 }
@@ -1342,6 +1342,15 @@ mod tests {
         let events: i64 = conn.query_row("SELECT count(*) FROM custody_events WHERE record_type='lost_report' AND record_id=?1", [&original.id], |r|r.get(0)).unwrap();
         assert_eq!(status, "open");
         assert!(events >= 4);
+        let staff = db::current_staff_name(&conn).unwrap();
+        let unattributed: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM custody_events WHERE record_type='lost_report' AND record_id=?1 AND staff_name<>?2",
+                rusqlite::params![original.id, staff],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(unattributed, 0);
     }
 
     #[test]
@@ -1426,6 +1435,74 @@ mod tests {
         let general = locations.iter().find(|l| !l.secure).unwrap().id.clone();
         let secure = locations.iter().find(|l| l.secure).unwrap().id.clone();
         (conn, general, secure)
+    }
+
+    #[test]
+    fn inventory_date_range_and_pagination_are_applied_by_sqlite() {
+        let (mut conn, storage, _) = configured_database(30);
+        for day in 1..=12 {
+            db::create_found(
+                &mut conn,
+                FoundInput {
+                    name: format!("Item {day:02}"),
+                    category_id: "other".into(),
+                    description: String::new(),
+                    color: String::new(),
+                    brand: String::new(),
+                    found_at: format!("2026-10-{day:02}T12:00"),
+                    found_location: "Front desk".into(),
+                    storage_location_id: storage.clone(),
+                    finder_name: String::new(),
+                    finder_contact: String::new(),
+                    staff_notes: String::new(),
+                },
+            )
+            .unwrap();
+        }
+
+        let second_page = db::list_found(
+            &conn,
+            "",
+            None,
+            None,
+            "all",
+            "2026-10-03",
+            "2026-10-10",
+            2,
+            3,
+        )
+        .unwrap();
+        assert_eq!(second_page.total, 8);
+        assert_eq!(second_page.page, 2);
+        assert_eq!(second_page.page_size, 3);
+        assert_eq!(second_page.items.len(), 3);
+        assert_eq!(second_page.items[0].name, "Item 07");
+        assert_eq!(second_page.items[2].name, "Item 05");
+
+        assert!(db::list_found(
+            &conn,
+            "",
+            None,
+            None,
+            "all",
+            "2026-02-30",
+            "",
+            1,
+            10,
+        )
+        .is_err());
+        assert!(db::list_found(
+            &conn,
+            "",
+            None,
+            None,
+            "all",
+            "2026-10-11",
+            "2026-10-10",
+            1,
+            10,
+        )
+        .is_err());
     }
 
     #[test]

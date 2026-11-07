@@ -741,7 +741,7 @@ pub fn update_lost(
     id: &str,
     input: LostInput,
 ) -> Result<LostReport, String> {
-    let staff = current_staff_name(conn).unwrap_or_default();
+    let staff = current_staff_name(conn)?;
     if input.name.trim().is_empty() || input.claimant_name.trim().is_empty() {
         return Err("Item and claimant names are required.".into());
     }
@@ -780,7 +780,7 @@ pub fn update_lost(
 }
 
 pub fn set_lost_status(conn: &mut Connection, id: &str, status: &str) -> Result<(), String> {
-    let staff = current_staff_name(conn).unwrap_or_default();
+    let staff = current_staff_name(conn)?;
     if !["open", "closed"].contains(&status) {
         return Err("Lost reports can only be manually opened or closed.".into());
     }
@@ -819,7 +819,7 @@ pub fn set_lost_status(conn: &mut Connection, id: &str, status: &str) -> Result<
 }
 
 pub fn create_found(conn: &mut Connection, input: FoundInput) -> Result<FoundItem, String> {
-    let staff = current_staff_name(conn).unwrap_or_default();
+    let staff = current_staff_name(conn)?;
     if input.name.trim().is_empty() {
         return Err("Item name is required.".into());
     }
@@ -872,7 +872,7 @@ pub fn update_found(
     id: &str,
     input: FoundInput,
 ) -> Result<FoundItem, String> {
-    let staff = current_staff_name(conn).unwrap_or_default();
+    let staff = current_staff_name(conn)?;
     let tx = conn.transaction().map_err(db_error)?;
     let before:Option<(String,String,String)>=tx.query_row("SELECT name,description,storage_location_id FROM found_items WHERE id=?1 AND status='in_custody'",[id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().map_err(db_error)?;
     let Some((old_name, old_description, old_location)) = before else {
@@ -1257,7 +1257,7 @@ pub fn review_match(
     item_id: &str,
     status: &str,
 ) -> Result<(), String> {
-    let staff = current_staff_name(conn).unwrap_or_default();
+    let staff = current_staff_name(conn)?;
     if !["suggested", "dismissed", "confirmed"].contains(&status) {
         return Err("Invalid match review action.".into());
     }
@@ -1301,7 +1301,7 @@ pub fn adjudicate_match(
     report_id: &str,
     item_id: &str,
 ) -> Result<(), String> {
-    let staff = current_staff_name(conn).unwrap_or_default();
+    let staff = current_staff_name(conn)?;
     let tx = conn.transaction().map_err(db_error)?;
     let winner: Option<(String, String, i64)> = tx.query_row(
         "SELECT r.reference,r.claimant_name,i.status='in_custody' FROM lost_reports r JOIN found_items i ON i.id=?2 WHERE r.id=?1 AND r.status='open'",
@@ -1334,7 +1334,7 @@ pub fn adjudicate_match(
 }
 
 pub fn create_lost(conn: &mut Connection, input: LostInput) -> Result<LostReport, String> {
-    let staff = current_staff_name(conn).unwrap_or_default();
+    let staff = current_staff_name(conn)?;
     if input.name.trim().is_empty() || input.claimant_name.trim().is_empty() {
         return Err("Item and claimant names are required.".into());
     }
@@ -1383,7 +1383,7 @@ pub fn register_photo(
     mime_type: &str,
     byte_size: i64,
 ) -> Result<PhotoRecord, String> {
-    let staff = current_staff_name(conn).unwrap_or_default();
+    let staff = current_staff_name(conn)?;
     let tx = conn.transaction().map_err(db_error)?;
     let active: bool = tx
         .query_row(
@@ -1430,7 +1430,7 @@ pub fn remove_photo_record(
     conn: &mut Connection,
     photo_id: &str,
 ) -> Result<Option<(String, String, String)>, String> {
-    let staff = current_staff_name(conn).unwrap_or_default();
+    let staff = current_staff_name(conn)?;
     let tx = conn.transaction().map_err(db_error)?;
     let result:Option<(String,String,String)>=tx.query_row("SELECT found_item_id,relative_path,COALESCE(thumbnail_path,'') FROM item_photos WHERE id=?1",[photo_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().map_err(db_error)?;
     if let Some((item_id, _, _)) = &result {

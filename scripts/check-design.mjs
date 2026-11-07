@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import ts from "typescript";
 
 const sourceRoot = path.resolve("src");
 const approvedFiles = new Set([
@@ -22,11 +23,83 @@ function lineAt(source, offset) {
   return source.slice(0, offset).split("\n").length;
 }
 
+function jsxAttribute(element, name) {
+  for (const attribute of element.attributes.properties) {
+    if (!ts.isJsxAttribute(attribute) || attribute.name.getText() !== name) continue;
+    const initializer = attribute.initializer;
+    if (!initializer) return "";
+    if (ts.isStringLiteral(initializer)) return initializer.text;
+    if (ts.isJsxExpression(initializer)) return initializer.expression?.getText() ?? "";
+  }
+  return null;
+}
+
+function expressionCanNameControl(expression) {
+  if (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) return expression.text.trim().length > 0;
+  if (ts.isTemplateExpression(expression)) return expression.head.text.trim().length > 0 || expression.templateSpans.length > 0;
+  if (ts.isConditionalExpression(expression)) return expressionCanNameControl(expression.whenTrue) || expressionCanNameControl(expression.whenFalse);
+  if (ts.isBinaryExpression(expression) && expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
+    return expressionCanNameControl(expression.right);
+  }
+  if (ts.isJsxElement(expression) || ts.isJsxSelfClosingElement(expression) || ts.isJsxFragment(expression)) return jsxChildrenCanName(expression);
+  if (ts.isPropertyAccessExpression(expression) || ts.isElementAccessExpression(expression) || ts.isCallExpression(expression)) return true;
+  if (ts.isIdentifier(expression)) return /^[a-z]/.test(expression.text);
+  return false;
+}
+
+function jsxChildrenCanName(node) {
+  const children = ts.isJsxElement(node) ? node.children : ts.isJsxFragment(node) ? node.children : [];
+  return children.some((child) => {
+    if (ts.isJsxText(child)) return child.getText().trim().length > 0;
+    if (ts.isJsxExpression(child)) return child.expression ? expressionCanNameControl(child.expression) : false;
+    if (ts.isJsxElement(child)) return jsxChildrenCanName(child);
+    return false;
+  });
+}
+
+function hasLabelAncestor(element) {
+  for (let parent = element.parent; parent; parent = parent.parent) {
+    if (!ts.isJsxElement(parent) || !ts.isJsxOpeningElement(parent.openingElement)) continue;
+    const name = parent.openingElement.tagName.getText();
+    if (name === "label") return true;
+    if (name === "Field" && (jsxAttribute(parent.openingElement, "label") ?? "").trim()) return true;
+  }
+  return false;
+}
+
+function hasExplicitAccessibleName(element) {
+  return ["aria-label", "aria-labelledby"].some((name) => (jsxAttribute(element, name) ?? "").trim());
+}
+
+function checkAccessibleNames(file, source, failures) {
+  if (!file.endsWith(".tsx") || file.includes(".test.")) return;
+  const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const relative = path.relative(process.cwd(), file);
+  function visit(node) {
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      const tag = node.tagName.getText();
+      if (["button", "input", "select", "textarea"].includes(tag)) {
+        const inputType = jsxAttribute(node, "type");
+        const isHiddenInput = tag === "input" && inputType === "hidden";
+        const named = hasExplicitAccessibleName(node) || hasLabelAncestor(node);
+        const buttonText = tag === "button" && ts.isJsxElement(node.parent) && jsxChildrenCanName(node.parent);
+        if (!isHiddenInput && !named && !buttonText) {
+          const line = parsed.getLineAndCharacterOfPosition(node.getStart()).line + 1;
+          failures.push(`${relative}:${line}: <${tag}> needs an accessible name or associated label`);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(parsed);
+}
+
 const failures = [];
 for (const file of sourceFiles(sourceRoot)) {
   if (approvedFiles.has(file)) continue;
   const source = fs.readFileSync(file, "utf8");
   const relative = path.relative(process.cwd(), file);
+  checkAccessibleNames(file, source, failures);
   if (file.endsWith(".css")) {
     const withoutComments = source.replace(/\/\*[\s\S]*?\*\//g, "");
     const declaration = /(?:^|[;{}])\s*([\w-]+)\s*:\s*([^;{}]+)/g;
@@ -54,11 +127,11 @@ for (const file of sourceFiles(sourceRoot)) {
 }
 
 if (failures.length) {
-  console.error(`Design token check failed with ${failures.length} unapproved color literal(s):`);
+  console.error(`Design governance check failed with ${failures.length} issue(s):`);
   for (const failure of failures) console.error(`  ${failure}`);
   process.exitCode = 1;
 } else {
-  console.log("Design token check passed: no unapproved color literals in component CSS or TS/TSX.");
+  console.log("Design governance check passed: no unapproved color literals or detected unlabeled controls in source.");
   console.log("Approved literal color sources: src/theme.css (semantic theme definitions), src/theme-palette.ts (curated organization colors).");
-  console.log("This static check does not verify rendered contrast, layout, or appearance.");
+  console.log("The accessible-name scan is heuristic and does not verify computed names, rendered contrast, keyboard behavior, or appearance.");
 }

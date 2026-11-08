@@ -181,7 +181,7 @@ fn inspect(path: &Path, destination: Option<&Path>) -> Result<Manifest, String> 
     drop(manifest_reader);
     let manifest: Manifest =
         serde_json::from_str(&json).map_err(|_| "Backup manifest is invalid.".to_string())?;
-    if manifest.format_version != ARCHIVE_VERSION || manifest.schema_version > 3 {
+    if manifest.format_version != ARCHIVE_VERSION || manifest.schema_version > 4 {
         return Err("This backup format is not compatible with this Reclaim version.".into());
     }
     if manifest.files.is_empty() || manifest.files.len() > MAX_BACKUP_FILES {
@@ -269,7 +269,7 @@ pub fn stage_restore(path: &Path, data_dir: &Path) -> Result<PathBuf, String> {
         let version: u32 = database
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .map_err(|e| e.to_string())?;
-        if version > 3 {
+        if version > 4 {
             return Err("Backup database requires a newer Reclaim version.".into());
         }
         Ok(())
@@ -317,7 +317,7 @@ mod tests {
         let destination = root.join("workspace.reclaim.zip");
         let manifest = create(&connection, &data, &destination).unwrap();
         assert_eq!(manifest.format_version, 1);
-        assert_eq!(manifest.schema_version, 3);
+        assert_eq!(manifest.schema_version, 4);
         assert_eq!(manifest.files.len(), 2);
         let stage = stage_restore(&destination, &data).unwrap();
         assert!(stage.join("database.sqlite3").exists());

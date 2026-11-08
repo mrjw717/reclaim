@@ -1,6 +1,6 @@
 # Reclaim 0.1.0 — Public Beta Candidate
 
-**Status:** Release candidate qualified through 2026-11-07; publication awaits owner authorization. See [release qualification](release-readiness.md) for the evidence matrix and remaining gates.
+**Status:** Release candidate staged locally on 2026-11-08; qualified for public beta and awaiting explicit owner publication authorization. See [release qualification](release-readiness.md) for the evidence matrix and recorded limitations.
 
 ## License
 
@@ -8,14 +8,14 @@ Reclaim is released under the MIT License, copyright Kynex Media. See [LICENSE](
 
 ## Platform
 
-Linux desktop (64-bit x86). Qualified artifacts: Debian (` .deb`) and RPM packages, install/launch/upgrade/removal tested in disposable containers. An AppImage builds and runs on its build baseline (glibc 2.43) but is not portable to older distributions; it is not a qualified distribution artifact for this beta. Other platforms are not qualified.
+Linux desktop (64-bit x86). Qualified artifacts for this beta: Debian (`.deb`) and RPM packages, install/launch/removal and data-retention tested in disposable Debian 13 and Fedora 44 containers on the exact release bytes. Distribution scope is intentionally limited to these two package formats: an AppImage builds and runs on its build baseline (glibc 2.43) but is not portable to older distributions, and publication is deferred by owner decision until an older-baseline build environment is chosen. Other platforms are not qualified.
 
 ## Included
 
-- Five-step organization onboarding, seven-day hours, Light/Dark/Follow System appearance, accessible brand color, and local logo.
+- Five-step organization onboarding, seven-day hours with explicit overnight intervals (for example Friday 8:00 PM–2:00 AM), Light/Dark/Follow System appearance, accessible brand color, and local logo.
 - Local categories, organization sites, site-linked storage areas, secure storage, and nested locations.
 - Found-item intake with optional photographs, search/filter/date paging, item editing, custody history, and storage moves.
-- Lost reports with edit/close/reopen, ranked match suggestions, competing-claim safeguards with a native confirmation, verified returns, and retention review/disposition.
+- Lost reports with edit/close/reopen, ranked match suggestions, competing-claim safeguards with a native confirmation, single-confirmation claim integrity enforced by the database schema, verified returns, and retention review/disposition.
 - Local SQLite storage and validated backup/restore (corrupt archives are rejected with prior data intact).
 - Accessibility: axe-core clean across rendered screens and themes, keyboard-operable drawer/dialogs with focus containment and restoration, WCAG-checked text and brand-color contrast in light and dark themes.
 
@@ -24,12 +24,12 @@ Linux desktop (64-bit x86). Qualified artifacts: Debian (` .deb`) and RPM packag
 - Single-workstation trust model: anyone with access to the workstation can use the application. Staff names are attribution labels, not authentication or enforced roles.
 - Data files and backup archives are not encrypted by Reclaim.
 - Reclaim does not synchronize workspaces between computers or automatically update itself.
-- One operating interval per day; split schedules are not supported.
+- One operating interval per day; split schedules are not supported. An interval that crosses midnight must be marked "Closes next day", and equal opening/closing times are rejected (for 24-hour service, use 00:00–23:59).
 - Match scores are heuristic and never establish ownership. Staff make the decision.
 - Retention deadlines prompt human review and do not encode local legal requirements.
-- The AppImage is not portable across distributions (glibc baseline); use the `.deb` or `.rpm`.
-- A screen-reader pass has not been performed; keyboard and automated accessibility coverage are complete but do not substitute for assistive-technology testing.
+- Distribution scope for this beta is intentionally limited to the Debian and RPM packages. An AppImage builds but bundles libraries requiring a newer glibc than long-term distributions ship, so AppImage publication is deferred until an older-baseline build environment is chosen; this is a distribution decision, not a packaging defect.
+- Screen-reader status: a real Orca 48.1 review across the essential workflows passed, with one repaired defect (day-specific names for hours checkboxes). Two announcement gaps remain on this platform stack and are recorded as known limitations: ARIA live-region messages (the role=alert validation message and the role=status save toast) and the native confirm dialog were visible and correctly marked up but were not spoken by Orca 48.1 under WebKitGTK/AT-SPI in the qualification environment. Keyboard and automated accessibility coverage are complete.
 
 ## Installation and upgrade
 
-Use the supplied `.deb` or `.rpm` package for the matching Linux distribution. Verify its SHA-256 checksum against the accompanying `SHA256SUMS` file. Before upgrading, close Reclaim and create a verified backup. Package upgrades preserve the application-data directory and run SQLite migrations on next launch (upgrade-with-data verified on Debian 13). Automatic updates are not enabled; install each future package manually. Uninstalling the package leaves your records and photos in the app-data directory.
+Use the supplied `.deb` or `.rpm` package for the matching Linux distribution. Verify its SHA-256 checksum against the accompanying `SHA256SUMS` file (2026-11-08 release bytes: `.deb` 4,336,308 bytes / `7426c2d7…fdee5d2632`; `.rpm` 4,428,246 bytes / `e62871c8…f612e3044`). Before upgrading, close Reclaim and create a verified backup. Package upgrades preserve the application-data directory and run SQLite migrations on next launch (upgrade-with-data verified on Debian 13; migration 0004 adds a claim-integrity guarantee). Automatic updates are not enabled; install each future package manually. Uninstalling the package leaves your records and photos in the app-data directory.

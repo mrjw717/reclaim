@@ -13,7 +13,7 @@ Open **Reclaim** from your desktop application menu. The first launch creates a 
 The five setup steps keep organization details, operating hours, appearance, and operational rules separate. You can go back without losing entered values.
 
 1. **Organization:** enter the organization name, type, phone, and email.
-2. **Location & hours:** name the first site, enter its address, then set open or closed and opening and closing times for Monday through Sunday. Use the copy-hours controls for repeated schedules. An overnight interval can close on the following day.
+2. **Location & hours:** name the first site, enter its address, then set open or closed and opening and closing times for Monday through Sunday. Use the copy-hours controls for repeated schedules. If the location closes after midnight — for example Friday 8:00 PM to 2:00 AM — mark the day with **Closes next day**; the close time must then be earlier than the open time. Equal opening and closing times are not accepted (for 24-hour service, use 00:00–23:59), and each overnight interval stays attached to its own day.
 3. **Branding:** choose Light, Dark, or Follow System, upload an optional PNG, JPEG, or WebP logo up to 2 MB, and choose an accessible primary color.
 4. **Preferences:** set the default retention period, whether returns require ownership verification, whether finder details can be omitted, and locale/date format.
 5. **Review:** check the summary and open the workspace. Edit these values later in Settings.

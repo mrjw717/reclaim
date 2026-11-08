@@ -1,0 +1,108 @@
+     24 Focus mode
+     24 Browse mode
+     11 Close button.
+      9 grayed.
+      8 invalid entry.
+      8 Open check box checked.
+      6 Register found item button.
+      6 Monday opening time entry.
+      6 Friday opening time entry.
+      6 Closes next day check box not checked.
+      5 Weekly operating hours landmark
+      5 Lost reports button.
+      5 Details for Test Item dialog
+      5 Closed check box not checked.
+      5 Close details button.
+      4 Street address entry.
+      4 State or region entry.
+      4 Settings button.
+      4 Review matches button.
+      4 Return this item dialog
+      4 Register a found item dialog
+      4 Postal code entry.
+      4 No more check boxes.
+      4 Monday closing time entry.
+      4 Help button.
+      4 Friday closing time entry.
+      4 Decrease text and interface size button.
+      4 Continue button.
+      4 City entry.
+      3 Storage button.
+      3 Review lost reports button.
+      3 Retention review button.
+      3 Primary phone entry (555) 010-2040.
+      3 Overview button.
+      3 Open organization settings button.
+      3 Increase text and interface size button.
+      3 Found items button.
+      3 Apply Monday’s hours to open days button.
+      2 Wednesday opening time entry.
+      2 Wednesday closing time entry.
+      2 Upload organization logo button.
+      2 Tuesday opening time entry.
+      2 Tuesday closing time entry.
+      2 Thursday opening time entry.
+      2 Thursday closing time entry.
+      2 Storage Physical locations button.
+      2 Start return button.
+      2 Staff notes entry Internal notes for your team.
+      2 Save found item button.
+      2 Save changes button.
+      2 Primary phone entry.
+      2 Primary color hex value entry #285c4b selected.
+      2 Preview action button.
+      2 Policies Retention and returns button.
+      2 Organization type entry Church or religious facility selected.
+      2 Organization type combo box Community center.
+      2 Organization name * entry Screen Reader Test Center selected required.
+      2 Organization Identity and contact button.
+      2 Lost report button.
+      2 Location name * entry East campus required.
+      2 Item name * entry e.g. Navy blue water bottle required.
+      2 Filter by category combo box All categories.
+      2 Email address entry.
+      2 Email address entry hello@organization.org.
+      2 Edit site Main locationMain Building button.
+      2 Edit details button.
+      2 Edit button.
+      2 Date & time found * entry required.
+      2 Data Backup and restore button.
+      2 Current staff attribution name entry Desk staff selected required.
+      2 Country entry.
+      2 Country entry United States selected.
+      2 Copy Monday to weekdays button.
+      2 Closes next day check box checked.
+      2 Close report button.
+      2 Close matches button.
+      2 Choose photo button.
+      2 Categories Item types button.
+      2 Blue Umbrella dialog
+      2 Appearance Theme and display button.
+      2 Add organization location button.
+      1 Weekly operating hours landmark.
+      1 Storage location * combo box Front Desk.
+      1 Select this claim button.
+      1 Search lost reports entry Search reports or claimants…
+      1 Search inventory entry Described the curved handle and blue canopy.
+      1 Review disposition button.
+      1 Recipient name * entry Who is receiving this item? required.
+      1 New storage location combo box Front Desk.
+      1 Monday open check box checked.
+      1 Monday closes next day check box not checked.
+      1 Item name * entry What are they looking for? required.
+      1 Found at entry e.g. Pool changing room.
+      1 Finder name (optional) entry Leave blank for anonymous.
+      1 Finder contact entry Phone or email.
+      1 Filter reports combo box Filter reports.
+      1 Done button.
+      1 Description entry Distinctive marks, contents, or other useful details.
+      1 Description entry Anything distinctive?
+      1 Create a lost report dialog
+      1 Color entry Blue.
+      1 Claimant name * entry required.
+      1 Category * combo box Phones & Mobile Devices.
+      1 Brand entry Optional.
+      1 Add photo button.
+--- post-fix installed-package verification (speech-dispatcher file log) ---
+Monday open check box checked.
+Monday closes next day check box not checked.

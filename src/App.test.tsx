@@ -258,6 +258,75 @@ describe("Reclaim application journeys", () => {
     invokeMock.mockImplementation(previous);
   });
 
+  it("surfaces a native adjudication rejection as an alert and keeps the suggestion selectable", async () => {
+    initialized = true;
+    const previous = invokeMock.getMockImplementation()!;
+    const lost = { id: "lost-10", reference: "RCL-10", name: "Blue insulated water bottle", categoryId: "drinkware", categoryName: "Drinkware", description: "Blue bottle", color: "Blue", brand: "", lostAt: "2026-11-06T10:00", lastLocation: "East Gymnasium", claimantName: "Taylor Reed", contact: "taylor@example.test", notes: "", status: "open", createdAt: "2026-11-06T10:00" };
+    const item = { id: "item-10", reference: "RCM-10", name: "Blue insulated water bottle", categoryId: "drinkware", categoryName: "Drinkware", description: "Blue bottle", color: "Blue", brand: "", foundAt: "2026-11-07T09:00", foundLocation: "East Gymnasium", storageLocationId: "loc-1", storageLocation: "Front Desk", storageSecure: false, finderName: "", finderContact: "", staffNotes: "", status: "in_custody", retentionDays: null, returnedAt: null, disposedAt: null, createdAt: "2026-11-07T09:00" };
+    invokeMock.mockImplementation(async (command: string, args: Record<string, unknown> = {}) => {
+      if (command === "list_lost_reports") return [lost];
+      if (command === "matching_candidates") return [{ foundItem: item, score: 91, explanation: ["Category matches"], reviewStatus: "suggested", competingClaims: [] }];
+      if (command === "adjudicate_match") throw new Error("The found item is no longer in custody.");
+      return previous(command, args);
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: /Good morning/i });
+    fireEvent.click(screen.getByRole("button", { name: "Lost reports" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Review matches" }));
+    // A stale view submits an adjudication the native layer rejects (for
+    // example the item was returned elsewhere): the dialog still completes,
+    // the failure is announced in the dialog, and the suggestion stays.
+    fireEvent.click(await screen.findByRole("button", { name: /Select this claim/i }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The found item is no longer in custody.");
+    expect(screen.getByRole("button", { name: /Select this claim/i })).toBeInTheDocument();
+    invokeMock.mockImplementation(previous);
+  });
+
+  it("saves overnight operating hours and blocks ambiguous equal times", async () => {
+    const clickContinue = () => {
+      const buttons = screen.getAllByRole("button", { name: /continue/i });
+      fireEvent.click(buttons[buttons.length - 1]);
+    };
+    render(<App />);
+    await screen.findByRole("heading", { name: "Who are we setting up?" });
+    fireEvent.change(screen.getByPlaceholderText("e.g. Northside Community Center"), { target: { value: "Northside Center" } });
+    clickContinue();
+    await screen.findByRole("heading", { name: "Set up your first location" });
+    fireEvent.change(screen.getByLabelText(/Location name/), { target: { value: "Main building" } });
+    const hours = within(screen.getByRole("region", { name: "Weekly operating hours" }));
+    const fridayOpens = hours.getByLabelText("Friday opening time") as HTMLInputElement;
+    const fridayCloses = hours.getByLabelText("Friday closing time") as HTMLInputElement;
+    // A closing time earlier than opening needs the overnight flag.
+    fireEvent.change(fridayCloses, { target: { value: "02:00" } });
+    expect(hours.getByRole("alert")).toHaveTextContent("Closing time must be later than opening time, or mark overnight.");
+    {
+      const buttons = screen.getAllByRole("button", { name: /continue/i });
+      expect(buttons[buttons.length - 1]).toBeDisabled();
+    }
+    const fridayRow = within(hours.getByText("Friday").parentElement as HTMLElement);
+    fireEvent.click(fridayRow.getByRole("checkbox", { name: /closes next day/i }));
+    expect(hours.queryByRole("alert")).not.toBeInTheDocument();
+    {
+      const buttons = screen.getAllByRole("button", { name: /continue/i });
+      expect(buttons[buttons.length - 1]).toBeEnabled();
+    }
+    // Equal open/close times stay ambiguous in both modes.
+    fireEvent.change(fridayOpens, { target: { value: "02:00" } });
+    expect(hours.getByRole("alert")).toHaveTextContent("An overnight close time must be earlier than the opening time");
+    {
+      const buttons = screen.getAllByRole("button", { name: /continue/i });
+      expect(buttons[buttons.length - 1]).toBeDisabled();
+    }
+    fireEvent.change(fridayCloses, { target: { value: "01:00" } });
+    expect(hours.queryByRole("alert")).not.toBeInTheDocument();
+    // Review step renders the overnight interval with an explicit next-day mark.
+    clickContinue();
+    clickContinue();
+    clickContinue();
+    expect(await screen.findByText(/Fri .*next day/)).toBeInTheDocument();
+  });
+
   it("opens the found-item form and submits its validated record to native persistence", async () => {
     initialized = true;
     render(<App />);

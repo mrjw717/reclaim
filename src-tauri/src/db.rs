@@ -73,7 +73,7 @@ fn migrate(conn: &mut Connection) -> Result<(), String> {
     let version: i64 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(db_error)?;
-    if version > 3 {
+    if version > 4 {
         return Err(format!(
             "Database version {version} is newer than this Reclaim release."
         ));
@@ -104,6 +104,17 @@ fn migrate(conn: &mut Connection) -> Result<(), String> {
         tx.execute_batch(include_str!("../migrations/0003_branding.sql"))
             .map_err(db_error)?;
         tx.pragma_update(None, "user_version", 3)
+            .map_err(db_error)?;
+        tx.commit().map_err(db_error)?;
+    }
+    let current: i64 = conn
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .map_err(db_error)?;
+    if current == 3 {
+        let tx = conn.transaction().map_err(db_error)?;
+        tx.execute_batch(include_str!("../migrations/0004_claim_integrity.sql"))
+            .map_err(db_error)?;
+        tx.pragma_update(None, "user_version", 4)
             .map_err(db_error)?;
         tx.commit().map_err(db_error)?;
     }
@@ -181,7 +192,17 @@ pub fn valid_operating_hours(value: &str) -> bool {
             ) else {
                 return false;
             };
-            d.overnight || close > open
+            // An open day is the interval [opens, closes) on that weekday, or
+            // [opens, closes) ending on the next calendar day when `overnight`
+            // is set. Equal times are rejected in both modes: "09:00 to 09:00"
+            // cannot distinguish a zero-length day from a 24-hour day, and
+            // Reclaim never stores an ambiguous schedule. 24-hour service is
+            // recorded as 00:00 to 23:59.
+            if d.overnight {
+                close < open
+            } else {
+                close > open
+            }
         })
 }
 pub fn current_staff_name(conn: &Connection) -> Result<String, String> {

@@ -971,6 +971,25 @@ mod tests {
         r#"[{"day":"Monday","closed":false,"opens":"09:00","closes":"17:00","overnight":false},{"day":"Tuesday","closed":false,"opens":"09:00","closes":"17:00","overnight":false},{"day":"Wednesday","closed":false,"opens":"09:00","closes":"17:00","overnight":false},{"day":"Thursday","closed":false,"opens":"09:00","closes":"17:00","overnight":false},{"day":"Friday","closed":false,"opens":"09:00","closes":"17:00","overnight":false},{"day":"Saturday","closed":true,"opens":"09:00","closes":"17:00","overnight":false},{"day":"Sunday","closed":true,"opens":"09:00","closes":"17:00","overnight":false}]"#.into()
     }
 
+    fn make_report(conn: &mut Connection, name: &str, claimant: &str) -> db::LostReport {
+        db::create_lost(
+            conn,
+            LostInput {
+                name: name.into(),
+                category_id: "clothing".into(),
+                description: "Zip pockets".into(),
+                color: "Gray".into(),
+                brand: "".into(),
+                lost_at: "2026-11-05T09:00".into(),
+                last_location: "Lobby".into(),
+                claimant_name: claimant.into(),
+                contact: "".into(),
+                notes: "".into(),
+            },
+        )
+        .unwrap()
+    }
+
     #[test]
     fn photo_bytes_require_supported_mime_and_valid_base64() {
         let data = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/qacAAAAASUVORK5CYII=";
@@ -1123,7 +1142,7 @@ mod tests {
         let version: i64 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
         db::seed_categories(&conn).unwrap();
         assert_eq!(db::categories(&conn, false).unwrap().len(), 17);
         let fk: i64 = conn
@@ -1156,7 +1175,126 @@ mod tests {
         let version: i64 = migrated
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
+        drop(migrated);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn migration_adds_the_single_confirmation_index_and_rejects_existing_contradictions() {
+        let root =
+            std::env::temp_dir().join(format!("reclaim-migrate-v3-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("reclaim.sqlite3");
+        // A database at version 3 that already carries two confirmed claims
+        // for one item (reachable only by hand-editing SQLite) must fail the
+        // upgrade loudly instead of silently rewriting match history.
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(include_str!("../migrations/0001_initial.sql"))
+                .unwrap();
+            conn.pragma_update(None, "user_version", 1).unwrap();
+            conn.execute_batch(include_str!("../migrations/0002_appearance.sql"))
+                .unwrap();
+            conn.pragma_update(None, "user_version", 2).unwrap();
+            conn.execute_batch(include_str!("../migrations/0003_branding.sql"))
+                .unwrap();
+            conn.pragma_update(None, "user_version", 3).unwrap();
+            conn.execute(
+                "INSERT INTO categories(id,name,active,sort_order,created_at,updated_at) VALUES('bags-backpacks','Backpacks',1,0,'2026-10-30T09:00','2026-10-30T09:00')",
+                [],
+            ).unwrap();
+            conn.execute(
+                "INSERT INTO storage_locations(id,name,active,sort_order,created_at) VALUES('front-desk','Front desk',1,0,'2026-10-30T09:00')",
+                [],
+            ).unwrap();
+            conn.execute(
+                "INSERT INTO lost_reports(id,reference,name,category_id,claimant_name,lost_at,created_at,updated_at) VALUES('r1','RCL-1','Backpack','bags-backpacks','Alex','2026-10-30T10:00','2026-10-30T10:00','2026-10-30T10:00')",
+                [],
+            ).unwrap();
+            conn.execute(
+                "INSERT INTO lost_reports(id,reference,name,category_id,claimant_name,lost_at,created_at,updated_at) VALUES('r2','RCL-2','Backpack','bags-backpacks','Jordan','2026-10-30T10:00','2026-10-30T10:00','2026-10-30T10:00')",
+                [],
+            ).unwrap();
+            conn.execute(
+                "INSERT INTO found_items(id,reference,name,category_id,found_at,storage_location_id,status,created_at,updated_at) VALUES('i1','RCM-1','Backpack','bags-backpacks','2026-10-30T09:00','front-desk','in_custody','2026-10-30T09:00','2026-10-30T09:00')",
+                [],
+            ).unwrap();
+            conn.execute(
+                "INSERT INTO match_reviews(id,lost_report_id,found_item_id,status,score,updated_at) VALUES('m1','r1','i1','confirmed',80,'2026-10-30T11:00')",
+                [],
+            ).unwrap();
+            conn.execute(
+                "INSERT INTO match_reviews(id,lost_report_id,found_item_id,status,score,updated_at) VALUES('m2','r2','i1','confirmed',75,'2026-10-30T11:00')",
+                [],
+            ).unwrap();
+        }
+        let contradictory = db::open_database(&path);
+        assert!(contradictory.is_err(), "contradictory confirmed claims must block the migration");
+        drop(contradictory);
+        std::fs::remove_dir_all(root).unwrap();
+
+        // A consistent version-3 database upgrades cleanly and gains the guard.
+        let root =
+            std::env::temp_dir().join(format!("reclaim-migrate-v3-clean-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("reclaim.sqlite3");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(include_str!("../migrations/0001_initial.sql"))
+                .unwrap();
+            conn.pragma_update(None, "user_version", 1).unwrap();
+            conn.execute_batch(include_str!("../migrations/0002_appearance.sql"))
+                .unwrap();
+            conn.pragma_update(None, "user_version", 2).unwrap();
+            conn.execute_batch(include_str!("../migrations/0003_branding.sql"))
+                .unwrap();
+            conn.pragma_update(None, "user_version", 3).unwrap();
+            conn.execute(
+                "INSERT INTO categories(id,name,active,sort_order,created_at,updated_at) VALUES('bags-backpacks','Backpacks',1,0,'2026-10-30T09:00','2026-10-30T09:00')",
+                [],
+            ).unwrap();
+            conn.execute(
+                "INSERT INTO storage_locations(id,name,active,sort_order,created_at) VALUES('front-desk','Front desk',1,0,'2026-10-30T09:00')",
+                [],
+            ).unwrap();
+            conn.execute(
+                "INSERT INTO lost_reports(id,reference,name,category_id,claimant_name,lost_at,created_at,updated_at) VALUES('r1','RCL-1','Backpack','bags-backpacks','Alex','2026-10-30T10:00','2026-10-30T10:00','2026-10-30T10:00')",
+                [],
+            ).unwrap();
+            conn.execute(
+                "INSERT INTO lost_reports(id,reference,name,category_id,claimant_name,lost_at,created_at,updated_at) VALUES('r2','RCL-2','Backpack','bags-backpacks','Jordan','2026-10-30T10:00','2026-10-30T10:00','2026-10-30T10:00')",
+                [],
+            ).unwrap();
+            conn.execute(
+                "INSERT INTO found_items(id,reference,name,category_id,found_at,storage_location_id,status,created_at,updated_at) VALUES('i1','RCM-1','Backpack','bags-backpacks','2026-10-30T09:00','front-desk','in_custody','2026-10-30T09:00','2026-10-30T09:00')",
+                [],
+            ).unwrap();
+            conn.execute(
+                "INSERT INTO match_reviews(id,lost_report_id,found_item_id,status,score,updated_at) VALUES('m1','r1','i1','suggested',80,'2026-10-30T11:00')",
+                [],
+            ).unwrap();
+        }
+        let migrated = db::open_database(&path).unwrap();
+        // The schema-level guard allows exactly one confirmed claim per item.
+        migrated.execute(
+            "INSERT INTO match_reviews(id,lost_report_id,found_item_id,status,score,updated_at) VALUES('m2','r2','i1','confirmed',75,'2026-10-30T11:00')",
+            [],
+        ).expect("the first confirmed claim is allowed");
+        let second = migrated.execute(
+            "UPDATE match_reviews SET status='confirmed' WHERE id='m1'",
+            [],
+        );
+        let message = second.expect_err("a second confirmed claim must violate the integrity index");
+        let text = message.to_string();
+        assert!(
+            text.contains("UNIQUE constraint failed") && text.contains("match_reviews.found_item_id"),
+            "unexpected error: {text}"
+        );
+        let version: i64 = migrated
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, 4);
         drop(migrated);
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -1250,6 +1388,66 @@ mod tests {
             .replacen("\"closes\":\"17:00\"", "\"closes\":\"08:00\"", 1)
             .replacen("\"overnight\":false", "\"overnight\":true", 1);
         assert!(db::valid_operating_hours(&overnight));
+    }
+
+    /// Replace one weekday's schedule with a specific opens/closes/overnight
+    /// shape so schedule scenarios can be expressed directly.
+    fn day_hours(hours: &str, day: &str, opens: &str, closes: &str, overnight: bool) -> String {
+        let parsed: Vec<serde_json::Value> = serde_json::from_str(hours).unwrap();
+        let updated: Vec<String> = parsed
+            .iter()
+            .map(|d| {
+                if d["day"] == day {
+                    serde_json::json!({
+                        "day": day,
+                        "closed": false,
+                        "opens": opens,
+                        "closes": closes,
+                        "overnight": overnight,
+                    })
+                } else {
+                    d.clone()
+                }
+            })
+            .map(|d| d.to_string())
+            .collect();
+        format!("[{}]", updated.join(","))
+    }
+
+    #[test]
+    fn overnight_schedules_cover_the_documented_release_scenarios() {
+        // Normal daytime schedule: accepted unchanged.
+        assert!(db::valid_operating_hours(&test_hours()));
+        // Friday 8:00 PM to Saturday 2:00 AM (overnight into the weekend).
+        let friday_late = day_hours(&test_hours(), "Friday", "20:00", "02:00", true);
+        assert!(db::valid_operating_hours(&friday_late));
+        // Saturday 10:00 PM to Sunday 4:00 AM (overnight past the week boundary;
+        // the interval belongs to Saturday and ends on Sunday regardless of
+        // Sunday's own open/closed flag, which stays closed here).
+        let saturday_late = day_hours(&test_hours(), "Saturday", "22:00", "04:00", true);
+        assert!(db::valid_operating_hours(&saturday_late));
+        // A fully closed week is a valid (if unusual) schedule.
+        let all_closed = r#"[{"day":"Monday","closed":true,"opens":"09:00","closes":"17:00","overnight":false},{"day":"Tuesday","closed":true,"opens":"09:00","closes":"17:00","overnight":false},{"day":"Wednesday","closed":true,"opens":"09:00","closes":"17:00","overnight":false},{"day":"Thursday","closed":true,"opens":"09:00","closes":"17:00","overnight":false},{"day":"Friday","closed":true,"opens":"09:00","closes":"17:00","overnight":false},{"day":"Saturday","closed":true,"opens":"09:00","closes":"17:00","overnight":false},{"day":"Sunday","closed":true,"opens":"09:00","closes":"17:00","overnight":false}]"#;
+        assert!(db::valid_operating_hours(all_closed));
+        // An interval that wraps midnight must be explicitly marked overnight.
+        let unmarked_wrap = day_hours(&test_hours(), "Friday", "20:00", "02:00", false);
+        assert!(!db::valid_operating_hours(&unmarked_wrap));
+        // Marking overnight only makes sense when closing is on the next day:
+        // a later close time with the overnight flag is contradictory.
+        let overnight_with_later_close = day_hours(&test_hours(), "Friday", "09:00", "17:00", true);
+        assert!(!db::valid_operating_hours(&overnight_with_later_close));
+        // Equal opens and closes are ambiguous in both modes (zero-length day
+        // versus 24-hour day), so both are rejected.
+        let equal_day = day_hours(&test_hours(), "Monday", "09:00", "09:00", false);
+        assert!(!db::valid_operating_hours(&equal_day));
+        let equal_overnight = day_hours(&test_hours(), "Friday", "20:00", "20:00", true);
+        assert!(!db::valid_operating_hours(&equal_overnight));
+        // 24-hour service is recorded as a full-day span, not equal times.
+        let always_open = day_hours(&test_hours(), "Monday", "00:00", "23:59", false);
+        assert!(db::valid_operating_hours(&always_open));
+        // Overnight close must stay before the opening time on the clock.
+        let overnight_equal_to_open = day_hours(&test_hours(), "Friday", "20:00", "20:01", true);
+        assert!(!db::valid_operating_hours(&overnight_equal_to_open));
     }
 
     #[test]
@@ -1594,6 +1792,214 @@ mod tests {
             staff_note: "".into(),
         };
         assert!(db::return_found(&mut conn, conflicting_return, false, "").is_err());
+    }
+
+    #[test]
+    fn adjudication_edge_cases_keep_claim_state_consistent() {
+        let (mut conn, storage, _) = configured_database(30);
+        // A configured staff label so history attribution can be asserted.
+        conn.execute("UPDATE organization SET staff_name='Desk staff'", [])
+            .unwrap();
+        let found = db::create_found(
+            &mut conn,
+            FoundInput {
+                name: "Gray fleece jacket".into(),
+                category_id: "clothing".into(),
+                description: "Zip pockets".into(),
+                color: "Gray".into(),
+                brand: "".into(),
+                found_at: "2026-11-05T10:00".into(),
+                found_location: "Lobby".into(),
+                storage_location_id: storage,
+                finder_name: "".into(),
+                finder_contact: "".into(),
+                staff_notes: "".into(),
+            },
+        )
+        .unwrap();
+        let alex = make_report(&mut conn, "Gray jacket", "Alex Rivera");
+        let jordan = make_report(&mut conn, "Gray jacket", "Jordan Blake");
+        let sam = make_report(&mut conn, "Fleece jacket", "Sam Patel");
+
+        // Confirming the eligible leading claim writes one confirmation.
+        db::review_match(&mut conn, &alex.id, &found.id, "confirmed").unwrap();
+        let confirmed = |conn: &Connection| -> Vec<String> {
+            let mut statement = conn
+                .prepare("SELECT lost_report_id FROM match_reviews WHERE found_item_id=?1 AND status='confirmed'")
+                .unwrap();
+            let rows = statement
+                .query_map([&found.id], |r| r.get::<_, String>(0))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
+            rows
+        };
+        assert_eq!(confirmed(&conn), vec![alex.id.clone()]);
+        // A second claimant cannot be confirmed while another is confirmed.
+        assert!(db::review_match(&mut conn, &jordan.id, &found.id, "confirmed").is_err());
+
+        // A previously dismissed claim can be reopened and re-confirmed; only
+        // one confirmation exists at any point.
+        db::review_match(&mut conn, &alex.id, &found.id, "dismissed").unwrap();
+        assert!(confirmed(&conn).is_empty());
+        db::review_match(&mut conn, &alex.id, &found.id, "confirmed").unwrap();
+        assert_eq!(confirmed(&conn), vec![alex.id.clone()]);
+
+        // Adjudicating a third claimant dismisses both competing claims in the
+        // same transaction and attributes the decisions to the staff label.
+        db::adjudicate_match(&mut conn, &sam.id, &found.id).unwrap();
+        let statuses = |conn: &Connection| -> Vec<(String, String)> {
+            let mut statement = conn
+                .prepare("SELECT lost_report_id,status FROM match_reviews WHERE found_item_id=?1 ORDER BY lost_report_id")
+                .unwrap();
+            statement
+                .query_map([&found.id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+        };
+        let reviews = statuses(&conn);
+        assert_eq!(reviews.len(), 3);
+        assert_eq!(reviews.iter().find(|(id, _)| id == &alex.id).unwrap().1, "dismissed");
+        assert_eq!(reviews.iter().find(|(id, _)| id == &jordan.id).unwrap().1, "dismissed");
+        assert_eq!(reviews.iter().find(|(id, _)| id == &sam.id).unwrap().1, "confirmed");
+        let dismissed_events: i64 = conn.query_row(
+            "SELECT count(*) FROM custody_events WHERE record_type='lost_report' AND event_type='competing_claim_dismissed' AND staff_name='Desk staff'",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(dismissed_events, 2);
+        let adjudicated: i64 = conn.query_row(
+            "SELECT count(*) FROM custody_events WHERE record_type='found_item' AND record_id=?1 AND event_type='claim_adjudicated'",
+            [&found.id],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(adjudicated, 1);
+
+        // A duplicate adjudication of the same claim is idempotent on claim
+        // state: still exactly one confirmed row, no contradictory state.
+        db::adjudicate_match(&mut conn, &sam.id, &found.id).unwrap();
+        assert_eq!(statuses(&conn).iter().filter(|(_, s)| s == "confirmed").count(), 1);
+
+        // Stale UI submissions against an already-returned item are rejected
+        // by the native layer instead of writing contradictory history.
+        let sam_return = db::ReturnInput {
+            found_item_id: found.id.clone(),
+            lost_report_id: Some(sam.id.clone()),
+            recipient_name: "Sam Patel".into(),
+            verification_method: "description_confirmed".into(),
+            verification_note: "Confirmed zip pockets".into(),
+            staff_note: "".into(),
+        };
+        db::return_found(&mut conn, sam_return, true, "").unwrap();
+        assert!(db::adjudicate_match(&mut conn, &jordan.id, &found.id).is_err());
+        assert!(db::review_match(&mut conn, &jordan.id, &found.id, "confirmed").is_err());
+        assert_eq!(
+            statuses(&conn).iter().filter(|(_, s)| s == "confirmed").count(),
+            1
+        );
+
+        // A closed report cannot win adjudication.
+        let closed = make_report(&mut conn, "Gray jacket", "Casey Quinn");
+        db::set_lost_status(&mut conn, &closed.id, "closed").unwrap();
+        assert!(db::adjudicate_match(&mut conn, &closed.id, &found.id).is_err());
+    }
+
+    #[test]
+    fn failed_history_write_rolls_back_the_whole_adjudication() {
+        let (mut conn, storage, _) = configured_database(30);
+        let found = db::create_found(
+            &mut conn,
+            FoundInput {
+                name: "Blue umbrella".into(),
+                category_id: "other".into(),
+                description: "".into(),
+                color: "Blue".into(),
+                brand: "".into(),
+                found_at: "2026-11-05T10:00".into(),
+                found_location: "Lobby".into(),
+                storage_location_id: storage,
+                finder_name: "".into(),
+                finder_contact: "".into(),
+                staff_notes: "".into(),
+            },
+        )
+        .unwrap();
+        let primary = db::create_lost(
+            &mut conn,
+            LostInput {
+                name: "Blue umbrella".into(),
+                category_id: "other".into(),
+                description: "".into(),
+                color: "Blue".into(),
+                brand: "".into(),
+                lost_at: "2026-11-05T09:00".into(),
+                last_location: "Lobby".into(),
+                claimant_name: "Alex Rivera".into(),
+                contact: "".into(),
+                notes: "".into(),
+            },
+        )
+        .unwrap();
+        let competing = db::create_lost(
+            &mut conn,
+            LostInput {
+                name: "Blue umbrella".into(),
+                category_id: "other".into(),
+                description: "".into(),
+                color: "Blue".into(),
+                brand: "".into(),
+                lost_at: "2026-11-05T09:00".into(),
+                last_location: "Lobby".into(),
+                claimant_name: "Jordan Blake".into(),
+                contact: "".into(),
+                notes: "".into(),
+            },
+        )
+        .unwrap();
+        // Simulate a database-level failure while the adjudication transaction
+        // is writing its history: the trigger aborts the claim_adjudicated
+        // insert after the competing dismissal updates have run.
+        conn.execute(
+            "CREATE TRIGGER fail_adjudication BEFORE INSERT ON custody_events WHEN NEW.event_type='claim_adjudicated' BEGIN SELECT RAISE(ABORT, 'injected adjudication failure'); END",
+            [],
+        ).unwrap();
+        let result = db::adjudicate_match(&mut conn, &primary.id, &found.id);
+        assert!(result.is_err());
+        conn.execute("DROP TRIGGER fail_adjudication", []).unwrap();
+        // Nothing from the adjudication is partially written: the two reports
+        // keep only their pre-existing automatic suggestions, with no
+        // dismissal or confirmation state, and no history events survive.
+        let reviews: Vec<(String, String)> = {
+            let mut statement = conn
+                .prepare("SELECT lost_report_id,status FROM match_reviews WHERE found_item_id=?1 ORDER BY lost_report_id")
+                .unwrap();
+            statement
+                .query_map([&found.id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+        };
+        assert_eq!(reviews.len(), 2, "only the two automatic suggestions remain");
+        assert!(
+            reviews.iter().all(|(id, status)| status == "suggested"
+                && (id == &primary.id || id == &competing.id)),
+            "no confirmation or dismissal may survive a failed adjudication"
+        );
+        let events: i64 = conn.query_row(
+            "SELECT count(*) FROM custody_events WHERE event_type IN ('claim_adjudicated','match_reviewed','competing_claim_dismissed') AND (record_id=?1 OR record_id=?2)",
+            [&primary.id, &competing.id],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(events, 0);
+        // The same adjudication succeeds once the failure is removed.
+        db::adjudicate_match(&mut conn, &primary.id, &found.id).unwrap();
+        let confirmed: i64 = conn.query_row(
+            "SELECT count(*) FROM match_reviews WHERE found_item_id=?1 AND status='confirmed'",
+            [&found.id],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(confirmed, 1);
     }
 
     #[test]

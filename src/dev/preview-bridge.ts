@@ -318,7 +318,24 @@ const handlers: Record<string, CommandHandler> = {
     stats: emptyStats,
   }),
   update_organization: (args) => Object.assign(organization, args.organization),
-  list_found_items: () => ({ items, total: items.length, page: 1, pageSize: 10 }),
+  list_found_items: (args) => {
+    // Mirror the native backend's filtering so rendered sweeps exercise the
+    // same query path as the real command (case-insensitive substring).
+    const query = String(args?.query ?? "")
+      .trim()
+      .toLowerCase();
+    const status = String(args?.status ?? "all");
+    const matched = items.filter((item) => {
+      const statusOk =
+        status === "all" ||
+        (status === "in_custody" && item.status === "in_custody") ||
+        (status === "returned" && item.status === "returned") ||
+        (status === "disposed" && item.status === "disposed");
+      const haystack = `${item.name} ${item.categoryName} ${item.reference}`.toLowerCase();
+      return statusOk && (!query || haystack.includes(query));
+    });
+    return { items: matched, total: matched.length, page: 1, pageSize: 10 };
+  },
   item_photo_previews: (args: Record<string, unknown>) =>
     (args.itemIds as string[]).map((itemId) => ({
       itemId,
@@ -378,6 +395,108 @@ handlers.bootstrap = () => ({
   storageLocations: [storage, secureStorage, longStorage],
   stats: emptyStats,
 });
+
+/**
+ * Development-only stand-in for the native plugin-dialog message dialog: an
+ * in-page alertdialog so keyboard/screen sweeps can exercise confirmations
+ * (unsaved-changes, photo removal) without a Tauri backend. Fulfills the
+ * same contract as plugin-dialog's `plugin:dialog|message` command — resolves
+ * with the chosen button label, or null on Escape.
+ */
+function previewMessageDialog(args: Record<string, unknown>): Promise<string | null> {
+  return new Promise((resolve) => {
+    const buttons =
+      args.buttons === "OkCancel" || (args.buttons && typeof args.buttons === "object")
+        ? args.buttons
+        : "Ok";
+    const entries: Array<[string, string]> =
+      buttons === "OkCancel"
+        ? [
+            ["Ok", "Ok"],
+            ["Cancel", "Cancel"],
+          ]
+        : Object.entries(buttons as Record<string, string>);
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const overlay = document.createElement("div");
+    overlay.setAttribute("data-preview-dialog", "");
+    const frame = document.createElement("div");
+    frame.setAttribute("role", "alertdialog");
+    frame.setAttribute("aria-modal", "true");
+    frame.setAttribute("aria-label", String(args.title ?? "Confirm"));
+    const text = document.createElement("p");
+    text.textContent = String(args.message ?? "");
+    frame.appendChild(text);
+    const row = document.createElement("div");
+    for (const [value, label] of entries) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.addEventListener("click", () => done(value));
+      row.appendChild(button);
+    }
+    frame.appendChild(row);
+    const finish = (value: string | null) => {
+      overlay.remove();
+      window.removeEventListener("keydown", onKey, true);
+      (previouslyFocused as HTMLElement | null)?.focus?.();
+      resolve(value);
+    };
+    const done = (value: string) => finish(value);
+    const focusables = () =>
+      Array.from(frame.querySelectorAll<HTMLButtonElement>("button")).filter(
+        (b) => !b.disabled && b.tabIndex !== -1,
+      );
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        finish(null);
+      } else if (event.key === "Tab") {
+        // Keep keyboard focus inside the dialog, matching native modal dialogs.
+        const list = focusables();
+        if (!list.length) return;
+        const current = list.indexOf(document.activeElement as HTMLButtonElement);
+        event.stopPropagation();
+        event.preventDefault();
+        const next = event.shiftKey
+          ? current <= 0
+            ? list.length - 1
+            : current - 1
+          : current === -1 || current === list.length - 1
+            ? 0
+            : current + 1;
+        list[next].focus();
+      }
+    };
+    overlay.appendChild(frame);
+    Object.assign(overlay.style, {
+      position: "fixed",
+      inset: "0",
+      display: "grid",
+      placeItems: "center",
+      zIndex: "9999",
+      background: "var(--overlay)",
+    } satisfies Partial<CSSStyleDeclaration>);
+    Object.assign(frame.style, {
+      display: "flex",
+      flexDirection: "column",
+      gap: "12px",
+      padding: "18px",
+      borderRadius: "12px",
+      minWidth: "320px",
+    } satisfies Partial<CSSStyleDeclaration>);
+    Object.assign(row.style, {
+      display: "flex",
+      gap: "8px",
+      justifyContent: "flex-end",
+    } satisfies Partial<CSSStyleDeclaration>);
+    window.addEventListener("keydown", onKey, true);
+    document.body.appendChild(overlay);
+    (row.querySelector("button") as HTMLButtonElement).focus();
+  });
+}
+
+handlers["plugin:dialog|message"] = (args) => previewMessageDialog(args);
+handlers["plugin:dialog|confirm"] = (args) => previewMessageDialog(args);
 
 export function installPreviewBridge(): void {
   const internals = (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ as

@@ -392,7 +392,10 @@ function ItemPhoto({ dataUrl }: { dataUrl: string | null | undefined }) {
       ) : dataUrl === null ? (
         <>
           <ImageOff size={17} />
-          <small>No photo</small>
+          {/* Visual-only placeholder: the text lives in CSS content so it is
+              not a DOM text node inside labeled photo cards (the tile is
+              aria-hidden and the card's accessible name already describes it). */}
+          <small />
         </>
       ) : null}
     </span>
@@ -716,14 +719,15 @@ function RecentGallery({
         className="gallery-card"
         onClick={() => onSelect(item)}
         tabIndex={echo ? -1 : undefined}
-        aria-label={`Open details for ${item.name}`}
+        // The visible card text is the item name, category, and status badge,
+        // so the accessible name must contain that same text (WCAG 2.5.3).
+        aria-label={`Open details for ${item.name}, ${item.categoryName} — ${statusLabel(item.status)}`}
       >
         <ItemPhoto dataUrl={photos[item.id]} />
         <span className="gallery-copy">
-          <strong>{item.name}</strong>
+          <strong>{item.name}</strong>{" "}
           <span className="gallery-meta">
-            <small>{item.categoryName}</small>
-            <StatusBadge status={item.status} />
+            <small>{item.categoryName}</small> <StatusBadge status={item.status} />
           </span>
         </span>
       </button>
@@ -1114,16 +1118,29 @@ function App() {
       />
     );
 
-  const navItems: { key: View; label: string; icon: LucideIcon; badge?: number }[] = [
+  const navItems: {
+    key: View;
+    label: string;
+    icon: LucideIcon;
+    badge?: number;
+    badgeSuffix?: string;
+  }[] = [
     { key: "dashboard", label: "Overview", icon: Boxes },
     { key: "inventory", label: "Found items", icon: Package },
-    { key: "lost", label: "Lost reports", icon: FileSearch, badge: stats.openReports },
+    {
+      key: "lost",
+      label: "Lost reports",
+      icon: FileSearch,
+      badge: stats.openReports,
+      badgeSuffix: "open",
+    },
     { key: "storage", label: "Storage", icon: MapPin },
     {
       key: "retention",
       label: "Retention review",
       icon: Clock3,
       badge: stats.retentionReview || undefined,
+      badgeSuffix: "due",
     },
   ];
 
@@ -1157,16 +1174,19 @@ function App() {
           </div>
           <div className="nav-caption">WORKSPACE</div>
           <nav className="primary-nav" aria-label="Main navigation">
-            {navItems.map(({ key, label, icon: Icon, badge }) => (
+            {navItems.map(({ key, label, icon: Icon, badge, badgeSuffix }) => (
               <button
                 key={key}
-                aria-label={label}
+                // The count chip is visible text, so the accessible name must
+                // include it (WCAG 2.5.3 Label in Name).
+                aria-label={badge ? `${label}, ${badge} ${badgeSuffix ?? ""}`.trim() : label}
                 className={`nav-link ${view === key ? "active" : ""}`}
                 onClick={() => void switchView(key)}
               >
                 <Icon size={17} strokeWidth={1.8} />
-                <span>{label}</span>
-                {badge ? <span className="nav-badge">{badge}</span> : null}
+                {/* The whitespace keeps visible-text extraction from gluing the
+                    count chip onto the label ("Lost reports1"). */}
+                <span>{label}</span> {badge ? <span className="nav-badge">{badge}</span> : null}
               </button>
             ))}
           </nav>
@@ -2146,15 +2166,16 @@ function Inventory({
               className="inventory-card"
               key={item.id}
               onClick={() => onSelect(item)}
-              aria-label={`Open details for ${item.name}`}
+              // Visible card text is name, category, date, and status — the
+              // accessible name must contain it (WCAG 2.5.3).
+              aria-label={`Open details for ${item.name}, ${item.categoryName}, ${dateLabel(item.foundAt)} — ${statusLabel(item.status)}`}
             >
               <ItemPhoto dataUrl={photos[item.id]} />
               <span className="inventory-card-copy">
-                <strong>{item.name}</strong>
+                <strong>{item.name}</strong>{" "}
                 <span className="inventory-card-meta">
-                  <small>{item.categoryName}</small>
-                  <small>{dateLabel(item.foundAt)}</small>
-                </span>
+                  <small>{item.categoryName}</small> <small>{dateLabel(item.foundAt)}</small>
+                </span>{" "}
                 <StatusBadge status={item.status} />
               </span>
             </button>
@@ -5226,8 +5247,12 @@ function ItemIcon({ categoryId }: { categoryId: string }) {
     iconMap[categories.find((category) => category.id === categoryId)?.icon ?? ""] ?? Package;
   return <Icon size={17} strokeWidth={1.8} />;
 }
+function statusLabel(status: string): string {
+  return status === "in_custody" ? "In custody" : status[0].toUpperCase() + status.slice(1);
+}
+
 function StatusBadge({ status }: { status: string }) {
-  const label = status === "in_custody" ? "In custody" : status[0].toUpperCase() + status.slice(1);
+  const label = statusLabel(status);
   return (
     <span className={`status-badge ${status}`}>
       <i />

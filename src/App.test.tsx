@@ -262,14 +262,17 @@ describe("Reclaim application journeys", () => {
     render(<App />);
     const gallery = await screen.findByRole("region", { name: "Recently found item photographs" });
     const photoCard = within(gallery).getByRole("button", {
-      name: "Open details for Blue insulated bottle",
+      name: "Open details for Blue insulated bottle, Other — In custody",
     });
     await waitFor(() => expect(photoCard.querySelector("img")).not.toBeNull());
     expect(within(photoCard).getByText("In custody")).toBeInTheDocument();
     const placeholderCard = within(gallery).getByRole("button", {
-      name: "Open details for Silver keyring",
+      name: "Open details for Silver keyring, Other — In custody",
     });
-    expect(placeholderCard.textContent).toContain("No photo");
+    // The placeholder text is CSS-generated (not a DOM text node) so labeled
+    // photo cards keep their accessible names aligned with visible labels.
+    expect(placeholderCard.querySelector(".item-photo.empty small")).toBeEmptyDOMElement();
+    expect(appCss).toContain('.item-photo.empty small::before { content: "No photo"; }');
     fireEvent.click(photoCard);
     expect(
       await screen.findByRole("dialog", { name: "Details for Blue insulated bottle" }),
@@ -300,9 +303,9 @@ describe("Reclaim application journeys", () => {
     expect(viewport!.getAttribute("data-gallery-state")).toBe("stationary");
     expect(gallery.querySelectorAll(".gallery-card").length).toBe(1);
     const card = within(gallery).getByRole("button", {
-      name: "Open details for Blue insulated bottle",
+      name: "Open details for Blue insulated bottle, Other — In custody",
     });
-    await waitFor(() => expect(card.textContent).toContain("No photo"));
+    await waitFor(() => expect(card.querySelector(".item-photo.empty small")).not.toBeNull());
     invokeMock.mockImplementation(previous);
   });
 
@@ -312,6 +315,24 @@ describe("Reclaim application journeys", () => {
     expect(resolveGalleryMotion(906, 800, false)).toBe("looping");
     expect(resolveGalleryMotion(1600, 800, false)).toBe("looping");
     expect(resolveGalleryMotion(2000, 800, true)).toBe("stationary");
+  });
+
+  it("includes visible sidebar counts in the accessible names of nav links (Label in Name)", async () => {
+    initialized = true;
+    const previous = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementation(async (command: string, args: Record<string, unknown> = {}) => {
+      if (command === "bootstrap") {
+        const base = await previous(command, args);
+        return { ...base, stats: { ...base.stats, openReports: 2, retentionReview: 3 } };
+      }
+      return previous(command, args);
+    });
+    render(<App />);
+    // The count chip is visible text inside the button, so the accessible
+    // name must contain it (WCAG 2.5.3); the badge number alone is not enough.
+    expect(await screen.findByRole("button", { name: "Lost reports, 2 open" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retention review, 3 due" })).toBeInTheDocument();
+    invokeMock.mockImplementation(previous);
   });
 
   it("switches Found items between list and gallery views while preserving the query, and remembers the choice", async () => {
@@ -362,12 +383,16 @@ describe("Reclaim application journeys", () => {
     );
     const gallery = screen.getByRole("region", { name: "Inventory photo gallery" });
     const galleryCard = within(gallery).getByRole("button", {
-      name: "Open details for Silver keyring",
+      name: /^Open details for Silver keyring, Other, .* — In custody$/,
     });
     expect(
-      within(gallery).queryByRole("button", { name: "Open details for Blue insulated bottle" }),
+      within(gallery).queryByRole("button", {
+        name: "Open details for Blue insulated bottle, Other — In custody",
+      }),
     ).not.toBeInTheDocument();
-    await waitFor(() => expect(galleryCard.textContent).toContain("No photo"));
+    await waitFor(() =>
+      expect(galleryCard.querySelector(".item-photo.empty small")).not.toBeNull(),
+    );
     await waitFor(() =>
       expect(window.localStorage.getItem("reclaim.inventoryView")).toBe("gallery"),
     );

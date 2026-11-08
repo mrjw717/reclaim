@@ -156,7 +156,7 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .dashboard-layout > .quick-actions { margin-top: auto; }
 .gallery-panel { flex: 1 1 auto; min-height: 228px; margin-bottom: 10px; display: flex; flex-direction: column; overflow: hidden; }
 .gallery-panel .panel-heading { padding: 12px 20px 8px; }
-.gallery-viewport { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; overflow: hidden; padding: 0 20px 12px; }
+.gallery-viewport { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; overflow: hidden; /* Paint containment keeps the animated looping track's hit-testing clipped to the gallery; belt-and-braces alongside overflow:hidden so the off-screen echo copy can never take input or intercept clicks elsewhere. */ contain: paint; padding: 0 20px 12px; }
 .gallery-track { display: flex; width: max-content; }
 .gallery-track.is-looping { animation: gallery-marquee var(--gallery-loop-duration, 48s) linear infinite; will-change: transform; }
 .gallery-viewport:hover .gallery-track.is-looping,
@@ -164,6 +164,8 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .gallery-viewport:active .gallery-track.is-looping { animation-play-state: paused; }
 @keyframes gallery-marquee { from { transform: translate3d(0,0,0); } to { transform: translate3d(-50%,0,0); } }
 .gallery-group { display: flex; align-items: stretch; gap: 12px; padding-right: 12px; }
+/* The echo copy exists only to make the loop seamless; it must never take input. */
+.gallery-group[aria-hidden="true"] { pointer-events: none; }
 .gallery-card { width: clamp(150px, 12vw, 200px); flex: 0 0 auto; display: flex; flex-direction: column; padding: 0; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-primary); overflow: hidden; text-align: left; cursor: pointer; transition: border-color .16s, box-shadow .16s; }
 .gallery-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-control); }
 .item-photo { width: 100%; aspect-ratio: 4 / 3; display: grid; place-items: center; align-content: center; gap: 4px; overflow: hidden; background: var(--surface-secondary); color: var(--text-muted); }

@@ -1275,6 +1275,14 @@ describe("Reclaim application journeys", () => {
         ".drawer-timeline { max-height: 185px; overflow: auto; flex-shrink: 0; }",
       );
     });
+    it("keeps the looping gallery clipped to its viewport", () => {
+      // The animated marquee track is wider than its viewport. overflow alone
+      // is the visual clip; paint containment additionally scopes hit-testing
+      // to the gallery box, and the aria-hidden echo copy never takes input.
+      expect(appCss).toContain(".gallery-viewport { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; overflow: hidden;");
+      expect(appCss).toContain("contain: paint;");
+      expect(appCss).toContain('.gallery-group[aria-hidden="true"] { pointer-events: none; }');
+    });
     it("keeps the item drawer a fixed column with sticky header, bounded body, and pinned footer", () => {
       // The drawer is three zones: header (identity + status) and footer
       // (custody actions) never scroll; .drawer-body is the single scroll

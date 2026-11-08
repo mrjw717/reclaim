@@ -1410,9 +1410,9 @@ function App() {
               )}
             </div>
           </div>
-          <footer className="statusbar">
+          <footer className="statusbar" data-state={busy ? "busy" : error ? "failed" : "saved"}>
             <span aria-live="polite">
-              <i /> {busy ? "Saving…" : "All changes saved"}
+              <i /> {busy ? "Saving…" : error ? "Last action failed" : "All changes saved"}
             </span>
             <span>
               Reclaim desktop <b>·</b> v{packageJson.version}

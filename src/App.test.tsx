@@ -712,6 +712,33 @@ describe("Reclaim application journeys", () => {
     expect(document.activeElement).toBe(opener);
   });
 
+  it("reports a failed save in the statusbar instead of claiming everything saved", async () => {
+    initialized = true;
+    const previous = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementation(async (command: string, args: Record<string, unknown> = {}) => {
+      if (command === "create_found_item") throw new Error("database is read-only");
+      return previous(command, args);
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: /Good (?:morning|afternoon|evening)/ });
+    expect(screen.getByText(/^All changes saved$/)).toBeInTheDocument();
+    // The overview shows the action twice (topbar + quick actions); take one.
+    const buttons = screen.getAllByRole("button", { name: /Register found item/i });
+    fireEvent.click(buttons[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Fill form" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save found item" }));
+    // When the native save fails the status must not claim "All changes saved".
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("database is read-only");
+    expect(screen.getByText(/^Last action failed$/)).toBeInTheDocument();
+    expect(screen.queryByText(/^All changes saved$/)).not.toBeInTheDocument();
+    // Dismissing the error banner (the user's recovery action) restores the
+    // truthful saved state; nothing auto-clears the failure behind their back.
+    invokeMock.mockImplementation(previous);
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss error" }));
+    await waitFor(() => expect(screen.getByText(/^All changes saved$/)).toBeInTheDocument());
+  });
+
   it("only adjudicates a confirmed claim when the native confirm dialog is accepted", async () => {
     initialized = true;
     const previous = invokeMock.getMockImplementation()!;

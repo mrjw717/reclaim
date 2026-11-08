@@ -1,33 +1,39 @@
 /* Reclaim semantic theme contract. Components consume roles; concrete colors live here. */
 :root,
 .setup-shell[data-theme="light"],
-.app-shell[data-theme="light"] {
+.app-shell[data-theme="light"],
+.setup-shell[data-theme="system"],
+.app-shell[data-theme="system"] {
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 17px;
   color-scheme: light;
-  --surface-canvas: #f5f5f1;
+  /* Neutral surfaces, text, and borders derive from the organization brand
+     color over hue-neutral anchors, so choosing a brand color themes the
+     whole app. The weights below reproduce the original green palette
+     exactly when the default brand color is set. */
+  --surface-canvas: color-mix(in srgb, var(--brand-primary) 3%, #fbfaf6);
   --surface-primary: #ffffff;
-  --surface-secondary: #f8f8f5;
+  --surface-secondary: color-mix(in srgb, var(--brand-primary) 2%, #fcfbf8);
   --surface-raised: #ffffff;
-  --surface-recessed: #f2f3ee;
-  --surface-hover: #eef0eb;
-  --surface-selected: #eaf1eb;
-  --surface-tinted: #f3f6f0;
+  --surface-recessed: color-mix(in srgb, var(--brand-primary) 4%, #faf9f5);
+  --surface-hover: color-mix(in srgb, var(--brand-primary) 5%, #f8f8f3);
+  --surface-selected: color-mix(in srgb, var(--brand-primary) 8%, #fbfef9);
+  --surface-tinted: color-mix(in srgb, var(--brand-primary) 5%, #fefef8);
   --surface-transparent: transparent;
   --surface-glass: rgb(251 251 248 / 96%);
   --surface-illustration: rgb(255 255 252 / 87%);
-  --text-primary: #232921;
-  --text-secondary: #586454;
-  --text-muted: #626b5f;
-  --text-subtle: #687264;
-  --text-disabled: #a9aea6;
+  --text-primary: color-mix(in srgb, var(--brand-primary) 6%, #23261e);
+  --text-secondary: color-mix(in srgb, var(--brand-primary) 25%, #686757);
+  --text-muted: color-mix(in srgb, var(--brand-primary) 25%, #757066);
+  --text-subtle: color-mix(in srgb, var(--brand-primary) 25%, #7d796c);
+  --text-disabled: color-mix(in srgb, var(--brand-primary) 20%, #c9c3bd);
   --text-on-accent: #ffffff;
   --text-on-brand: #ffffff;
-  --border-subtle: #e9eae5;
-  --border-strong: #dfe4dc;
+  --border-subtle: color-mix(in srgb, var(--brand-primary) 5%, #f3f1ed);
+  --border-strong: color-mix(in srgb, var(--brand-primary) 10%, #f3f3ec);
   --border-focus: var(--brand-accent);
-  --border-accent: #e8ebe5;
+  --border-accent: color-mix(in srgb, var(--brand-primary) 5%, #f2f3ed);
   --border-decorative: rgb(106 130 103 / 20%);
   --focus-ring: 0 0 0 3px var(--brand-accent);
   --brand-primary: var(--org-brand-color, #285c4b);
@@ -57,12 +63,12 @@
   --state-danger-foreground: #b45549;
   --state-info-surface: #edf2f5;
   --state-info-foreground: var(--accent-blue-foreground);
-  --preview-light-canvas: #f5f5f1;
+  --preview-light-canvas: color-mix(in srgb, var(--brand-primary) 3%, #fbfaf6);
   --preview-light-surface: #ffffff;
-  --preview-light-border: #e9eae5;
-  --preview-dark-canvas: #1a201b;
-  --preview-dark-surface: #242c25;
-  --preview-dark-border: #394239;
+  --preview-light-border: color-mix(in srgb, var(--brand-primary) 5%, #f3f1ed);
+  --preview-dark-canvas: color-mix(in srgb, var(--brand-primary) 6%, #1b1b1e);
+  --preview-dark-surface: color-mix(in srgb, var(--brand-primary) 6%, #26262a);
+  --preview-dark-border: color-mix(in srgb, var(--brand-primary) 8%, #3c3c41);
   --overlay-scrim: rgb(31 39 32 / 32%);
   --overlay-drawer: rgb(35 43 35 / 17%);
   --overlay-control: rgb(38 46 39 / 62%);
@@ -79,29 +85,29 @@
 
 :is(.app-shell, .setup-shell)[data-theme="dark"] {
   color-scheme: dark;
-  --surface-canvas: #1a201b;
-  --surface-primary: #242c25;
-  --surface-secondary: #202720;
-  --surface-raised: #2b342d;
-  --surface-recessed: #202720;
-  --surface-hover: #303a31;
-  --surface-selected: #293e31;
-  --surface-tinted: #202820;
+  --surface-canvas: color-mix(in srgb, var(--brand-primary) 6%, #1b1b1e);
+  --surface-primary: color-mix(in srgb, var(--brand-primary) 6%, #26262a);
+  --surface-secondary: color-mix(in srgb, var(--brand-primary) 6%, #232327);
+  --surface-raised: color-mix(in srgb, var(--brand-primary) 6%, #2d2d32);
+  --surface-recessed: color-mix(in srgb, var(--brand-primary) 6%, #232327);
+  --surface-hover: color-mix(in srgb, var(--brand-primary) 6%, #343439);
+  --surface-selected: color-mix(in srgb, var(--brand-primary) 10%, #303035);
+  --surface-tinted: color-mix(in srgb, var(--brand-primary) 6%, #242428);
   --surface-transparent: transparent;
-  --surface-glass: rgb(29 36 30 / 96%);
-  --surface-illustration: rgb(36 44 37 / 94%);
-  --text-primary: #edf1e9;
-  --text-secondary: #bac3b8;
-  --text-muted: #a1ada0;
-  --text-subtle: #929b93;
-  --text-disabled: #6f766d;
-  --text-on-accent: #f4f7f1;
-  --text-on-brand: #15211a;
-  --border-subtle: #394239;
-  --border-strong: #4a554a;
+  --surface-glass: rgb(30 30 34 / 96%);
+  --surface-illustration: rgb(37 37 42 / 94%);
+  --text-primary: color-mix(in srgb, var(--brand-primary) 8%, #fefefe);
+  --text-secondary: color-mix(in srgb, var(--brand-primary) 12%, #d1d1d5);
+  --text-muted: color-mix(in srgb, var(--brand-primary) 12%, #b4b4ba);
+  --text-subtle: color-mix(in srgb, var(--brand-primary) 12%, #a3a3a9);
+  --text-disabled: color-mix(in srgb, var(--brand-primary) 12%, #7b7b81);
+  --text-on-accent: color-mix(in srgb, var(--brand-primary) 4%, #fdfdfe);
+  --text-on-brand: color-mix(in srgb, var(--brand-primary) 25%, #101013);
+  --border-subtle: color-mix(in srgb, var(--brand-primary) 8%, #3c3c41);
+  --border-strong: color-mix(in srgb, var(--brand-primary) 8%, #4f4f55);
   --border-focus: var(--brand-accent);
-  --border-accent: #4a554a;
-  --border-decorative: rgb(130 163 132 / 24%);
+  --border-accent: color-mix(in srgb, var(--brand-primary) 8%, #4f4f55);
+  --border-decorative: rgb(140 140 150 / 24%);
   --focus-ring: 0 0 0 3px var(--brand-accent);
   --brand-primary: var(--org-brand-color, #72a486);
   --brand-accent: color-mix(in srgb, var(--brand-primary), #ffffff 48%);
@@ -147,29 +153,29 @@
 @media (prefers-color-scheme: dark) {
   :is(.app-shell, .setup-shell)[data-theme="system"] {
     color-scheme: dark;
-    --surface-canvas: #1a201b;
-    --surface-primary: #242c25;
-    --surface-secondary: #202720;
-    --surface-raised: #2b342d;
-    --surface-recessed: #202720;
-    --surface-hover: #303a31;
-    --surface-selected: #293e31;
-    --surface-tinted: #202820;
+    --surface-canvas: color-mix(in srgb, var(--brand-primary) 6%, #1b1b1e);
+    --surface-primary: color-mix(in srgb, var(--brand-primary) 6%, #26262a);
+    --surface-secondary: color-mix(in srgb, var(--brand-primary) 6%, #232327);
+    --surface-raised: color-mix(in srgb, var(--brand-primary) 6%, #2d2d32);
+    --surface-recessed: color-mix(in srgb, var(--brand-primary) 6%, #232327);
+    --surface-hover: color-mix(in srgb, var(--brand-primary) 6%, #343439);
+    --surface-selected: color-mix(in srgb, var(--brand-primary) 10%, #303035);
+    --surface-tinted: color-mix(in srgb, var(--brand-primary) 6%, #242428);
     --surface-transparent: transparent;
-    --surface-glass: rgb(29 36 30 / 96%);
-    --surface-illustration: rgb(36 44 37 / 94%);
-    --text-primary: #edf1e9;
-    --text-secondary: #bac3b8;
-    --text-muted: #a1ada0;
-    --text-subtle: #929b93;
-    --text-disabled: #6f766d;
-    --text-on-accent: #f4f7f1;
-    --text-on-brand: #15211a;
-    --border-subtle: #394239;
-    --border-strong: #4a554a;
+    --surface-glass: rgb(30 30 34 / 96%);
+    --surface-illustration: rgb(37 37 42 / 94%);
+    --text-primary: color-mix(in srgb, var(--brand-primary) 8%, #fefefe);
+    --text-secondary: color-mix(in srgb, var(--brand-primary) 12%, #d1d1d5);
+    --text-muted: color-mix(in srgb, var(--brand-primary) 12%, #b4b4ba);
+    --text-subtle: color-mix(in srgb, var(--brand-primary) 12%, #a3a3a9);
+    --text-disabled: color-mix(in srgb, var(--brand-primary) 12%, #7b7b81);
+    --text-on-accent: color-mix(in srgb, var(--brand-primary) 4%, #fdfdfe);
+    --text-on-brand: color-mix(in srgb, var(--brand-primary) 25%, #101013);
+    --border-subtle: color-mix(in srgb, var(--brand-primary) 8%, #3c3c41);
+    --border-strong: color-mix(in srgb, var(--brand-primary) 8%, #4f4f55);
     --border-focus: var(--brand-accent);
-    --border-accent: #4a554a;
-    --border-decorative: rgb(130 163 132 / 24%);
+    --border-accent: color-mix(in srgb, var(--brand-primary) 8%, #4f4f55);
+    --border-decorative: rgb(140 140 150 / 24%);
     --focus-ring: 0 0 0 3px var(--brand-accent);
     --brand-primary: var(--org-brand-color, #72a486);
     --brand-accent: color-mix(in srgb, var(--brand-primary), #ffffff 48%);

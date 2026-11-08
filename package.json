@@ -10,9 +10,13 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "preview": "vite preview",
-    "tauri": "tauri",
+    "lint": "eslint src",
+    "format": "prettier --write src",
+    "check:format": "prettier --check src",
+    "check:rustfmt": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
     "check:design": "node scripts/check-design.mjs",
-    "check:contrast": "node scripts/check-contrast.mjs"
+    "check:contrast": "node scripts/check-contrast.mjs",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -23,6 +27,7 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tauri-apps/cli": "^2",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
@@ -30,8 +35,14 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^6.0.2",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.7",
+    "globals": "^17.14.0",
     "jsdom": "^30.1.3",
+    "prettier": "^3.9.10",
     "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.1",
     "vite": "^8.0.16",
     "vitest": "^5.0.5"
   }

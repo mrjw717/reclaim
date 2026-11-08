@@ -1,0 +1,6 @@
+src/App.css
+src/theme.css
+src/assets/
+node_modules/
+dist/
+pnpm-lock.yaml

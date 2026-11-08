@@ -29,3 +29,7 @@ Development builds expose **Autofill Test Data** on setup, found-item, and new l
 ## Identity boundary
 
 `staff_name` is an editable local attribution label written with supported events. It is not a login, verified identity, or access-control mechanism. Reclaim currently targets one local workstation and has no staff accounts or role permissions.
+
+## 2026-11-08 additions
+
+Navigation resets search, status, category, storage, and date filters so a filter set in Found Inventory can never silently filter Lost Reports; the inventory empty state offers a one-action "Clear filters" reset. Search commits 250 ms after the last keystroke (navigation commits immediately), and the results line is an aria-live region. Ctrl/Cmd+K focuses the inventory search from any view (hint glyph follows platform). The statusbar shows "Saving…" while a mutation is in flight and otherwise "All changes saved"; the document title names the current view. Removing a drawer photo asks for confirmation first (custody history is preserved either way). Organization settings is a real form (Enter saves; the save button submits) and warns before navigation discards unsaved edits. Category rows expose both Move up and Move down, disabled at the list ends, writing the new order through `reorder_categories`. Lost Reports shows the truthful total (for example "12 of 311 reports · showing the first 12") when the 250-row query cap binds; the cap and total come from the native `list_lost_reports` page result.

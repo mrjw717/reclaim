@@ -1,5 +1,5 @@
 use chrono::{Local, NaiveTime, Utc};
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 use serde::{Deserialize, Serialize};
 use std::{path::Path, time::Duration};
 use uuid::Uuid;
@@ -236,11 +236,26 @@ mod organization_location_tests {
             "INSERT INTO organization_locations(id,name,street,city,region,postal_code,country,active,created_at) VALUES(?1,'North Annex','','','','','','0',?2)",
             params![id, now()],
         ).expect("site seeded");
-        save_organization_location(&mut conn, OrganizationLocationInput {
-            id: Some(id.into()), name: "North Annex Renovated".into(), street: "1 Main".into(),
-            city: "Sampletown".into(), region: String::new(), postal_code: String::new(), country: String::new(),
-        }).expect("site updated");
-        let active: i64 = conn.query_row("SELECT active FROM organization_locations WHERE id=?1", [id], |r| r.get(0)).expect("active field");
+        save_organization_location(
+            &mut conn,
+            OrganizationLocationInput {
+                id: Some(id.into()),
+                name: "North Annex Renovated".into(),
+                street: "1 Main".into(),
+                city: "Sampletown".into(),
+                region: String::new(),
+                postal_code: String::new(),
+                country: String::new(),
+            },
+        )
+        .expect("site updated");
+        let active: i64 = conn
+            .query_row(
+                "SELECT active FROM organization_locations WHERE id=?1",
+                [id],
+                |r| r.get(0),
+            )
+            .expect("active field");
         assert_eq!(active, 0, "editing a site must not implicitly restore it");
     }
 }
@@ -1222,7 +1237,19 @@ pub fn match_candidates(
         }
         let competing_claims = {
             let mut stmt = tx.prepare("SELECT r.id,r.reference,r.claimant_name,r.name,m.status,m.score FROM match_reviews m JOIN lost_reports r ON r.id=m.lost_report_id WHERE m.found_item_id=?1 AND r.id<>?2 AND r.status='open' AND m.status IN ('suggested','confirmed') ORDER BY CASE m.status WHEN 'confirmed' THEN 0 ELSE 1 END,m.score DESC,r.created_at").map_err(db_error)?;
-            stmt.query_map(params![item.id, report_id], |r| Ok(CompetingClaim { report_id:r.get(0)?, reference:r.get(1)?, claimant_name:r.get(2)?, item_name:r.get(3)?, status:r.get(4)?, score:r.get(5)? })).map_err(db_error)?.collect::<Result<Vec<_>,_>>().map_err(db_error)?
+            stmt.query_map(params![item.id, report_id], |r| {
+                Ok(CompetingClaim {
+                    report_id: r.get(0)?,
+                    reference: r.get(1)?,
+                    claimant_name: r.get(2)?,
+                    item_name: r.get(3)?,
+                    status: r.get(4)?,
+                    score: r.get(5)?,
+                })
+            })
+            .map_err(db_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(db_error)?
         };
         candidates.push(MatchCandidate {
             found_item: item,
@@ -1340,17 +1367,58 @@ pub fn adjudicate_match(
     ).map_err(db_error)?;
     let competing = {
         let mut stmt = tx.prepare("SELECT r.id,r.reference,r.claimant_name FROM match_reviews m JOIN lost_reports r ON r.id=m.lost_report_id WHERE m.found_item_id=?1 AND r.id<>?2 AND m.status IN ('suggested','confirmed')").map_err(db_error)?;
-        stmt.query_map(params![item_id, report_id], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(db_error)?.collect::<Result<Vec<_>,_>>().map_err(db_error)?
+        stmt.query_map(params![item_id, report_id], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })
+        .map_err(db_error)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_error)?
     };
     let timestamp = now();
     for (other_id, other_reference, other_claimant) in competing {
         tx.execute("UPDATE match_reviews SET status='dismissed',updated_at=?1 WHERE lost_report_id=?2 AND found_item_id=?3",params![timestamp,other_id,item_id]).map_err(db_error)?;
-        insert_event(&tx,"lost_report",&other_id,"competing_claim_dismissed",&timestamp,&staff,serde_json::json!({"foundItemId":item_id,"selectedReportId":report_id,"selectedReference":reference}))?;
-        insert_event(&tx,"found_item",item_id,"competing_claim_dismissed",&timestamp,&staff,serde_json::json!({"reportId":other_id,"reference":other_reference,"claimantName":other_claimant,"selectedReportId":report_id}))?;
+        insert_event(
+            &tx,
+            "lost_report",
+            &other_id,
+            "competing_claim_dismissed",
+            &timestamp,
+            &staff,
+            serde_json::json!({"foundItemId":item_id,"selectedReportId":report_id,"selectedReference":reference}),
+        )?;
+        insert_event(
+            &tx,
+            "found_item",
+            item_id,
+            "competing_claim_dismissed",
+            &timestamp,
+            &staff,
+            serde_json::json!({"reportId":other_id,"reference":other_reference,"claimantName":other_claimant,"selectedReportId":report_id}),
+        )?;
     }
     tx.execute("INSERT INTO match_reviews(id,lost_report_id,found_item_id,status,score,updated_at) VALUES(?1,?2,?3,'confirmed',?4,?5) ON CONFLICT(lost_report_id,found_item_id) DO UPDATE SET status='confirmed',updated_at=excluded.updated_at",params![new_id(),report_id,item_id,score,timestamp]).map_err(db_error)?;
-    insert_event(&tx,"lost_report",report_id,"match_reviewed",&timestamp,&staff,serde_json::json!({"foundItemId":item_id,"status":"confirmed","score":score,"adjudicated":true}))?;
-    insert_event(&tx,"found_item",item_id,"claim_adjudicated",&timestamp,&staff,serde_json::json!({"reportId":report_id,"reference":reference,"claimantName":claimant}))?;
+    insert_event(
+        &tx,
+        "lost_report",
+        report_id,
+        "match_reviewed",
+        &timestamp,
+        &staff,
+        serde_json::json!({"foundItemId":item_id,"status":"confirmed","score":score,"adjudicated":true}),
+    )?;
+    insert_event(
+        &tx,
+        "found_item",
+        item_id,
+        "claim_adjudicated",
+        &timestamp,
+        &staff,
+        serde_json::json!({"reportId":report_id,"reference":reference,"claimantName":claimant}),
+    )?;
     tx.commit().map_err(db_error)
 }
 
@@ -1445,6 +1513,40 @@ pub fn photo_paths(conn: &Connection, item_id: &str) -> Result<Vec<(String, Stri
         .map_err(db_error)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(db_error)
+}
+
+/// First managed photo per requested item: (item_id, photo_id, photo path).
+/// Items without photos are simply absent so galleries can show a placeholder.
+pub fn first_photo_paths(
+    conn: &Connection,
+    item_ids: &[String],
+) -> Result<Vec<(String, String, String)>, String> {
+    if item_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let sql = format!(
+        "SELECT found_item_id,id,COALESCE(thumbnail_path,relative_path) FROM item_photos WHERE found_item_id IN ({}) ORDER BY found_item_id,created_at",
+        vec!["?"; item_ids.len()].join(",")
+    );
+    let mut statement = conn.prepare(&sql).map_err(db_error)?;
+    let rows = statement
+        .query_map(params_from_iter(item_ids.iter()), |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })
+        .map_err(db_error)?;
+    let mut seen = std::collections::HashSet::new();
+    let mut first_per_item = Vec::new();
+    for row in rows {
+        let (item_id, photo_id, path) = row.map_err(db_error)?;
+        if seen.insert(item_id.clone()) {
+            first_per_item.push((item_id, photo_id, path));
+        }
+    }
+    Ok(first_per_item)
 }
 
 pub fn remove_photo_record(

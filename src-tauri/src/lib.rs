@@ -47,7 +47,8 @@ fn managed_photo_path(data_dir: &Path, relative: &str) -> Result<PathBuf, String
         || relative_path
             .components()
             .any(|component| !matches!(component, std::path::Component::Normal(_)))
-        || relative_path.components().next() != Some(std::path::Component::Normal("photos".as_ref()))
+        || relative_path.components().next()
+            != Some(std::path::Component::Normal("photos".as_ref()))
     {
         return Err("Invalid photo reference.".into());
     }
@@ -66,10 +67,10 @@ fn managed_photo_path(data_dir: &Path, relative: &str) -> Result<PathBuf, String
         }
     }
 
-    let canonical_root = std::fs::canonicalize(photo_root)
-        .map_err(|_| "Photo storage is missing.".to_string())?;
-    let canonical_path = std::fs::canonicalize(current)
-        .map_err(|_| "Stored photo is missing.".to_string())?;
+    let canonical_root =
+        std::fs::canonicalize(photo_root).map_err(|_| "Photo storage is missing.".to_string())?;
+    let canonical_path =
+        std::fs::canonicalize(current).map_err(|_| "Stored photo is missing.".to_string())?;
     if !canonical_path.starts_with(canonical_root) || !canonical_path.is_file() {
         return Err("Invalid photo reference.".into());
     }
@@ -550,6 +551,42 @@ struct PhotoPreview {
     data_url: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ItemPhotoPreview {
+    item_id: String,
+    data_url: Option<String>,
+}
+
+/// One thumbnail per requested item for list and gallery views. A missing or
+/// unreadable photo file yields `null` for that item instead of failing the
+/// whole gallery; callers show their no-photo placeholder.
+#[tauri::command]
+fn item_photo_previews(
+    state: State<'_, AppState>,
+    item_ids: Vec<String>,
+) -> Result<Vec<ItemPhotoPreview>, String> {
+    if item_ids.len() > 200 {
+        return Err("Too many items requested for photo previews.".into());
+    }
+    let rows = with_db(&state, |conn| db::first_photo_paths(conn, &item_ids))?;
+    Ok(rows
+        .into_iter()
+        .map(|(item_id, _photo_id, relative)| {
+            let data_url = managed_photo_path(&state._data_dir, &relative)
+                .ok()
+                .and_then(|path| std::fs::read(path).ok())
+                .map(|bytes| {
+                    format!(
+                        "data:image/jpeg;base64,{}",
+                        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes)
+                    )
+                });
+            ItemPhotoPreview { item_id, data_url }
+        })
+        .collect())
+}
+
 #[tauri::command]
 fn item_photos(state: State<'_, AppState>, item_id: String) -> Result<Vec<PhotoPreview>, String> {
     let paths = with_db(&state, |conn| db::photo_paths(conn, &item_id))?;
@@ -617,7 +654,8 @@ fn recover_interrupted_restore(data_dir: &Path) -> Result<(), String> {
     if !marker.exists() {
         return Ok(());
     }
-    let state = std::fs::read_to_string(&marker).map_err(|e| format!("Could not read restore recovery state: {e}"))?;
+    let state = std::fs::read_to_string(&marker)
+        .map_err(|e| format!("Could not read restore recovery state: {e}"))?;
     let database = data_dir.join("reclaim.sqlite3");
     let old_database = data_dir.join("reclaim.sqlite3.restore-previous");
     let photos = data_dir.join("photos");
@@ -721,7 +759,15 @@ async fn restore_backup(app: tauri::AppHandle, state: State<'_, AppState>) -> Re
 
     let install = (|| -> Result<Connection, String> {
         let had_photos = photos.exists();
-        std::fs::write(&marker, if had_photos { b"pending:photos=1" } else { b"pending:photos=0" }).map_err(|e| e.to_string())?;
+        std::fs::write(
+            &marker,
+            if had_photos {
+                b"pending:photos=1"
+            } else {
+                b"pending:photos=0"
+            },
+        )
+        .map_err(|e| e.to_string())?;
         if previous_db.exists() {
             std::fs::remove_file(&previous_db).map_err(|e| e.to_string())?;
         }
@@ -820,39 +866,61 @@ fn set_lost_report_status(
     with_db_mut(&state, |conn| db::set_lost_status(conn, &id, &status))
 }
 
+/// Lost reports are returned with their total match count so the UI can be
+/// truthful when the 250-row query cap binds.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LostReportsPage {
+    reports: Vec<LostReport>,
+    total: i64,
+}
+
 #[tauri::command]
 fn list_lost_reports(
     state: State<'_, AppState>,
     query: String,
     status: String,
-) -> Result<Vec<LostReport>, String> {
+) -> Result<LostReportsPage, String> {
     with_db(&state, |conn| {
         let needle = format!("%{}%", query.trim());
         let status = if status == "all" { "%" } else { &status };
-        let mut statement=conn.prepare("SELECT r.id,r.reference,r.name,r.category_id,c.name,r.description,r.color,r.brand,r.lost_at,r.last_location,r.claimant_name,r.contact,r.notes,r.status,r.created_at FROM lost_reports r JOIN categories c ON c.id=r.category_id WHERE (?1='' OR r.reference LIKE ?2 OR r.name LIKE ?2 OR r.description LIKE ?2 OR r.last_location LIKE ?2 OR r.claimant_name LIKE ?2) AND (?3='%' OR r.status=?3) ORDER BY r.lost_at DESC LIMIT 250").map_err(db::db_error)?;
-        statement
-            .query_map(params![query.trim(), needle, status], |r| {
+        let filter = "(?1='' OR r.reference LIKE ?2 OR r.name LIKE ?2 OR r.description LIKE ?2 OR r.last_location LIKE ?2 OR r.claimant_name LIKE ?2) AND (?3='%' OR r.status=?3)";
+        let total: i64 = conn
+            .query_row(
+                &format!("SELECT COUNT(*) FROM lost_reports r JOIN categories c ON c.id=r.category_id WHERE {filter}"),
+                params![query.trim(), needle, status],
+                |row| row.get(0),
+            )
+            .map_err(db::db_error)?;
+        let mut statement = conn
+            .prepare(&format!(
+                "SELECT r.id,r.reference,r.name,r.category_id,c.name,r.description,r.color,r.brand,r.lost_at,r.last_location,r.claimant_name,r.contact,r.notes,r.status,r.created_at FROM lost_reports r JOIN categories c ON c.id=r.category_id WHERE {filter} ORDER BY r.lost_at DESC LIMIT 250"
+            ))
+            .map_err(db::db_error)?;
+        let reports = statement
+            .query_map(params![query.trim(), needle, status], |row| {
                 Ok(LostReport {
-                    id: r.get(0)?,
-                    reference: r.get(1)?,
-                    name: r.get(2)?,
-                    category_id: r.get(3)?,
-                    category_name: r.get(4)?,
-                    description: r.get(5)?,
-                    color: r.get(6)?,
-                    brand: r.get(7)?,
-                    lost_at: r.get(8)?,
-                    last_location: r.get(9)?,
-                    claimant_name: r.get(10)?,
-                    contact: r.get(11)?,
-                    notes: r.get(12)?,
-                    status: r.get(13)?,
-                    created_at: r.get(14)?,
+                    id: row.get(0)?,
+                    reference: row.get(1)?,
+                    name: row.get(2)?,
+                    category_id: row.get(3)?,
+                    category_name: row.get(4)?,
+                    description: row.get(5)?,
+                    color: row.get(6)?,
+                    brand: row.get(7)?,
+                    lost_at: row.get(8)?,
+                    last_location: row.get(9)?,
+                    claimant_name: row.get(10)?,
+                    contact: row.get(11)?,
+                    notes: row.get(12)?,
+                    status: row.get(13)?,
+                    created_at: row.get(14)?,
                 })
             })
             .map_err(db::db_error)?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(db::db_error)
+            .map_err(db::db_error)?;
+        Ok(LostReportsPage { reports, total })
     })
 }
 
@@ -948,6 +1016,7 @@ pub fn run() {
             item_activity,
             import_item_photo,
             item_photos,
+            item_photo_previews,
             remove_item_photo,
             export_backup,
             restore_backup,
@@ -1002,7 +1071,8 @@ mod tests {
 
     #[test]
     fn managed_photo_reads_reject_paths_outside_photo_storage() {
-        let root = std::env::temp_dir().join(format!("reclaim-photo-path-{}", uuid::Uuid::new_v4()));
+        let root =
+            std::env::temp_dir().join(format!("reclaim-photo-path-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(root.join("photos/item-a")).unwrap();
         std::fs::write(root.join("photos/item-a/photo.jpg"), b"photo").unwrap();
         std::fs::write(root.join("private.txt"), b"private").unwrap();
@@ -1010,6 +1080,83 @@ mod tests {
         assert!(managed_photo_path(&root, "photos/../../private.txt").is_err());
         assert!(managed_photo_path(&root, "private.txt").is_err());
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn first_photo_paths_return_one_photo_per_item_in_insertion_order() {
+        let mut conn = db::open_memory().expect("in-memory database");
+        conn.execute(
+            "INSERT INTO organization(id,name,organization_type,phone,email,street,city,region,postal_code,country,operating_hours,operating_hours_json,locale,date_format,retention_days,require_verification,allow_anonymous_finders,theme,primary_color,logo_data_url,created_at,updated_at) VALUES('org','Center','Community center','','','','','','','','','[]','','MMM d, yyyy',30,1,1,'system','#285c4b',NULL,'2026-11-01T09:00','2026-11-01T09:00')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO storage_locations(id,name,active,sort_order,created_at) VALUES('loc','Front desk',1,0,'2026-11-01T09:00')",
+            [],
+        )
+        .unwrap();
+        for (id, reference) in [
+            ("item-a", "RCM-A"),
+            ("item-b", "RCM-B"),
+            ("item-c", "RCM-C"),
+        ] {
+            conn.execute(
+                "INSERT INTO found_items(id,reference,name,category_id,found_at,storage_location_id,status,created_at,updated_at) VALUES(?1,?2,'Blue bottle','drinkware','2026-11-01T09:00','loc','in_custody','2026-11-01T09:00','2026-11-01T09:00')",
+                params![id, reference],
+            )
+            .unwrap();
+        }
+        db::register_photo(
+            &mut conn,
+            "item-a",
+            "photos/item-a/second.jpg",
+            "photos/item-a/second-thumb.jpg",
+            "image/jpeg",
+            10,
+        )
+        .unwrap();
+        db::register_photo(
+            &mut conn,
+            "item-a",
+            "photos/item-a/latest.jpg",
+            "photos/item-a/latest-thumb.jpg",
+            "image/jpeg",
+            10,
+        )
+        .unwrap();
+        db::register_photo(
+            &mut conn,
+            "item-b",
+            "photos/item-b/only.jpg",
+            "photos/item-b/only-thumb.jpg",
+            "image/jpeg",
+            10,
+        )
+        .unwrap();
+
+        let ids: Vec<String> = ["item-a", "item-b", "item-c", "missing"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let rows = db::first_photo_paths(&conn, &ids).expect("photo lookup");
+        assert_eq!(rows.len(), 2, "items without photos are simply absent");
+        assert_eq!(rows[0].0, "item-a");
+        assert_eq!(
+            rows[0].2, "photos/item-a/second-thumb.jpg",
+            "the earliest photo represents the item"
+        );
+        assert_eq!(rows[1].0, "item-b");
+        assert_eq!(rows[1].2, "photos/item-b/only-thumb.jpg");
+        assert!(
+            db::first_photo_paths(&conn, &[]).unwrap().is_empty(),
+            "an empty request stays empty"
+        );
+        let duplicate = db::first_photo_paths(&conn, &["item-a".into(), "item-a".into()]).unwrap();
+        assert_eq!(
+            duplicate.len(),
+            1,
+            "duplicated item ids collapse to one row"
+        );
     }
 
     #[test]
@@ -1050,19 +1197,30 @@ mod tests {
 
     #[test]
     fn committed_restore_keeps_new_pair_when_cleanup_was_interrupted() {
-        let root = std::env::temp_dir().join(format!("reclaim-restore-commit-{}", uuid::Uuid::new_v4()));
+        let root =
+            std::env::temp_dir().join(format!("reclaim-restore-commit-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(root.join("photos")).unwrap();
         std::fs::create_dir_all(root.join("photos.restore-previous")).unwrap();
         std::fs::write(root.join("restore.in-progress"), b"committed").unwrap();
         std::fs::write(root.join("reclaim.sqlite3"), b"new-database").unwrap();
-        std::fs::write(root.join("reclaim.sqlite3.restore-previous"), b"old-database").unwrap();
+        std::fs::write(
+            root.join("reclaim.sqlite3.restore-previous"),
+            b"old-database",
+        )
+        .unwrap();
         std::fs::write(root.join("photos/new.jpg"), b"new-photo").unwrap();
         std::fs::write(root.join("photos.restore-previous/old.jpg"), b"old-photo").unwrap();
 
         recover_interrupted_restore(&root).unwrap();
 
-        assert_eq!(std::fs::read(root.join("reclaim.sqlite3")).unwrap(), b"new-database");
-        assert_eq!(std::fs::read(root.join("photos/new.jpg")).unwrap(), b"new-photo");
+        assert_eq!(
+            std::fs::read(root.join("reclaim.sqlite3")).unwrap(),
+            b"new-database"
+        );
+        assert_eq!(
+            std::fs::read(root.join("photos/new.jpg")).unwrap(),
+            b"new-photo"
+        );
         assert!(!root.join("reclaim.sqlite3.restore-previous").exists());
         assert!(!root.join("photos.restore-previous").exists());
         std::fs::remove_dir_all(root).unwrap();
@@ -1070,16 +1228,26 @@ mod tests {
 
     #[test]
     fn interrupted_restore_without_old_photos_removes_partial_new_photos() {
-        let root = std::env::temp_dir().join(format!("reclaim-restore-no-photos-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!(
+            "reclaim-restore-no-photos-{}",
+            uuid::Uuid::new_v4()
+        ));
         std::fs::create_dir_all(root.join("photos")).unwrap();
         std::fs::write(root.join("restore.in-progress"), b"pending:photos=0").unwrap();
         std::fs::write(root.join("reclaim.sqlite3"), b"new-database").unwrap();
-        std::fs::write(root.join("reclaim.sqlite3.restore-previous"), b"old-database").unwrap();
+        std::fs::write(
+            root.join("reclaim.sqlite3.restore-previous"),
+            b"old-database",
+        )
+        .unwrap();
         std::fs::write(root.join("photos/new.jpg"), b"partial-photo").unwrap();
 
         recover_interrupted_restore(&root).unwrap();
 
-        assert_eq!(std::fs::read(root.join("reclaim.sqlite3")).unwrap(), b"old-database");
+        assert_eq!(
+            std::fs::read(root.join("reclaim.sqlite3")).unwrap(),
+            b"old-database"
+        );
         assert!(!root.join("photos").exists());
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -1230,7 +1398,10 @@ mod tests {
             ).unwrap();
         }
         let contradictory = db::open_database(&path);
-        assert!(contradictory.is_err(), "contradictory confirmed claims must block the migration");
+        assert!(
+            contradictory.is_err(),
+            "contradictory confirmed claims must block the migration"
+        );
         drop(contradictory);
         std::fs::remove_dir_all(root).unwrap();
 
@@ -1285,10 +1456,12 @@ mod tests {
             "UPDATE match_reviews SET status='confirmed' WHERE id='m1'",
             [],
         );
-        let message = second.expect_err("a second confirmed claim must violate the integrity index");
+        let message =
+            second.expect_err("a second confirmed claim must violate the integrity index");
         let text = message.to_string();
         assert!(
-            text.contains("UNIQUE constraint failed") && text.contains("match_reviews.found_item_id"),
+            text.contains("UNIQUE constraint failed")
+                && text.contains("match_reviews.found_item_id"),
             "unexpected error: {text}"
         );
         let version: i64 = migrated
@@ -1356,8 +1529,14 @@ mod tests {
             .into_iter()
             .find(|location| location.id == "east-annex-locker")
             .unwrap();
-        assert_eq!(linked_storage.organization_location_id.as_deref(), Some(annex.id.as_str()));
-        assert_eq!(linked_storage.organization_location_name.as_deref(), Some("East Annex"));
+        assert_eq!(
+            linked_storage.organization_location_id.as_deref(),
+            Some(annex.id.as_str())
+        );
+        assert_eq!(
+            linked_storage.organization_location_name.as_deref(),
+            Some("East Annex")
+        );
         assert!(
             db::save_organization_location(
                 &mut conn,
@@ -1677,30 +1856,21 @@ mod tests {
         assert_eq!(second_page.items[0].name, "Item 07");
         assert_eq!(second_page.items[2].name, "Item 05");
 
-        assert!(db::list_found(
-            &conn,
-            "",
-            None,
-            None,
-            "all",
-            "2026-02-30",
-            "",
-            1,
-            10,
-        )
-        .is_err());
-        assert!(db::list_found(
-            &conn,
-            "",
-            None,
-            None,
-            "all",
-            "2026-10-11",
-            "2026-10-10",
-            1,
-            10,
-        )
-        .is_err());
+        assert!(db::list_found(&conn, "", None, None, "all", "2026-02-30", "", 1, 10,).is_err());
+        assert!(
+            db::list_found(
+                &conn,
+                "",
+                None,
+                None,
+                "all",
+                "2026-10-11",
+                "2026-10-10",
+                1,
+                10,
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -1774,15 +1944,37 @@ mod tests {
         db::review_match(&mut conn, &report.id, &found.id, "confirmed").unwrap();
         assert!(db::review_match(&mut conn, &competing.id, &found.id, "confirmed").is_err());
         let candidates = db::match_candidates(&mut conn, &competing.id).unwrap();
-        let competing_candidate = candidates.iter().find(|c| c.found_item.id == found.id).unwrap();
-        assert!(competing_candidate.competing_claims.iter().any(|c| c.report_id == report.id && c.claimant_name == "Alex Smith"));
+        let competing_candidate = candidates
+            .iter()
+            .find(|c| c.found_item.id == found.id)
+            .unwrap();
+        assert!(
+            competing_candidate
+                .competing_claims
+                .iter()
+                .any(|c| c.report_id == report.id && c.claimant_name == "Alex Smith")
+        );
         db::adjudicate_match(&mut conn, &competing.id, &found.id).unwrap();
-        let reviews: Vec<(String,String)> = {
+        let reviews: Vec<(String, String)> = {
             let mut statement=conn.prepare("SELECT lost_report_id,status FROM match_reviews WHERE found_item_id=?1 ORDER BY lost_report_id").unwrap();
-            statement.query_map([&found.id],|r|Ok((r.get(0)?,r.get(1)?))).unwrap().collect::<Result<Vec<_>,_>>().unwrap()
+            statement
+                .query_map([&found.id], |r| Ok((r.get(0)?, r.get(1)?)))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
         };
-        assert_eq!(reviews.iter().find(|(id,_)| id==&report.id).unwrap().1,"dismissed");
-        assert_eq!(reviews.iter().find(|(id,_)| id==&competing.id).unwrap().1,"confirmed");
+        assert_eq!(
+            reviews.iter().find(|(id, _)| id == &report.id).unwrap().1,
+            "dismissed"
+        );
+        assert_eq!(
+            reviews
+                .iter()
+                .find(|(id, _)| id == &competing.id)
+                .unwrap()
+                .1,
+            "confirmed"
+        );
         let conflicting_return = db::ReturnInput {
             found_item_id: found.id.clone(),
             lost_report_id: Some(report.id.clone()),
@@ -1853,16 +2045,27 @@ mod tests {
                 .prepare("SELECT lost_report_id,status FROM match_reviews WHERE found_item_id=?1 ORDER BY lost_report_id")
                 .unwrap();
             statement
-                .query_map([&found.id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                .query_map([&found.id], |r| {
+                    Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+                })
                 .unwrap()
                 .collect::<Result<Vec<_>, _>>()
                 .unwrap()
         };
         let reviews = statuses(&conn);
         assert_eq!(reviews.len(), 3);
-        assert_eq!(reviews.iter().find(|(id, _)| id == &alex.id).unwrap().1, "dismissed");
-        assert_eq!(reviews.iter().find(|(id, _)| id == &jordan.id).unwrap().1, "dismissed");
-        assert_eq!(reviews.iter().find(|(id, _)| id == &sam.id).unwrap().1, "confirmed");
+        assert_eq!(
+            reviews.iter().find(|(id, _)| id == &alex.id).unwrap().1,
+            "dismissed"
+        );
+        assert_eq!(
+            reviews.iter().find(|(id, _)| id == &jordan.id).unwrap().1,
+            "dismissed"
+        );
+        assert_eq!(
+            reviews.iter().find(|(id, _)| id == &sam.id).unwrap().1,
+            "confirmed"
+        );
         let dismissed_events: i64 = conn.query_row(
             "SELECT count(*) FROM custody_events WHERE record_type='lost_report' AND event_type='competing_claim_dismissed' AND staff_name='Desk staff'",
             [],
@@ -1879,7 +2082,13 @@ mod tests {
         // A duplicate adjudication of the same claim is idempotent on claim
         // state: still exactly one confirmed row, no contradictory state.
         db::adjudicate_match(&mut conn, &sam.id, &found.id).unwrap();
-        assert_eq!(statuses(&conn).iter().filter(|(_, s)| s == "confirmed").count(), 1);
+        assert_eq!(
+            statuses(&conn)
+                .iter()
+                .filter(|(_, s)| s == "confirmed")
+                .count(),
+            1
+        );
 
         // Stale UI submissions against an already-returned item are rejected
         // by the native layer instead of writing contradictory history.
@@ -1895,7 +2104,10 @@ mod tests {
         assert!(db::adjudicate_match(&mut conn, &jordan.id, &found.id).is_err());
         assert!(db::review_match(&mut conn, &jordan.id, &found.id, "confirmed").is_err());
         assert_eq!(
-            statuses(&conn).iter().filter(|(_, s)| s == "confirmed").count(),
+            statuses(&conn)
+                .iter()
+                .filter(|(_, s)| s == "confirmed")
+                .count(),
             1
         );
 
@@ -1975,15 +2187,23 @@ mod tests {
                 .prepare("SELECT lost_report_id,status FROM match_reviews WHERE found_item_id=?1 ORDER BY lost_report_id")
                 .unwrap();
             statement
-                .query_map([&found.id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                .query_map([&found.id], |r| {
+                    Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+                })
                 .unwrap()
                 .collect::<Result<Vec<_>, _>>()
                 .unwrap()
         };
-        assert_eq!(reviews.len(), 2, "only the two automatic suggestions remain");
+        assert_eq!(
+            reviews.len(),
+            2,
+            "only the two automatic suggestions remain"
+        );
         assert!(
-            reviews.iter().all(|(id, status)| status == "suggested"
-                && (id == &primary.id || id == &competing.id)),
+            reviews
+                .iter()
+                .all(|(id, status)| status == "suggested"
+                    && (id == &primary.id || id == &competing.id)),
             "no confirmation or dismissal may survive a failed adjudication"
         );
         let events: i64 = conn.query_row(
@@ -1994,11 +2214,13 @@ mod tests {
         assert_eq!(events, 0);
         // The same adjudication succeeds once the failure is removed.
         db::adjudicate_match(&mut conn, &primary.id, &found.id).unwrap();
-        let confirmed: i64 = conn.query_row(
-            "SELECT count(*) FROM match_reviews WHERE found_item_id=?1 AND status='confirmed'",
-            [&found.id],
-            |r| r.get(0),
-        ).unwrap();
+        let confirmed: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM match_reviews WHERE found_item_id=?1 AND status='confirmed'",
+                [&found.id],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(confirmed, 1);
     }
 

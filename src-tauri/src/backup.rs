@@ -148,8 +148,13 @@ fn safe_relative(value: &str) -> Result<PathBuf, String> {
     let path = Path::new(value);
     if value.contains('\\')
         || value.starts_with('/')
-        || value.split('/').any(|part| part.is_empty() || part == "." || part == "..")
-        || value.split('/').next().is_some_and(|part| part.contains(':'))
+        || value
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+        || value
+            .split('/')
+            .next()
+            .is_some_and(|part| part.contains(':'))
         || path.is_absolute()
         || path
             .components()
@@ -212,7 +217,13 @@ fn inspect(path: &Path, destination: Option<&Path>) -> Result<Manifest, String> 
             if let Some(parent) = output_path.parent() {
                 fs::create_dir_all(parent).map_err(|e| e.to_string())?;
             }
-            Some(File::options().write(true).create_new(true).open(&output_path).map_err(|e| e.to_string())?)
+            Some(
+                File::options()
+                    .write(true)
+                    .create_new(true)
+                    .open(&output_path)
+                    .map_err(|e| e.to_string())?,
+            )
         } else {
             None
         };
@@ -222,12 +233,18 @@ fn inspect(path: &Path, destination: Option<&Path>) -> Result<Manifest, String> 
         let mut output = output_path;
         loop {
             let count = file.read(&mut buffer).map_err(|e| e.to_string())?;
-            if count == 0 { break; }
+            if count == 0 {
+                break;
+            }
             copied = copied.saturating_add(count as u64);
-            if copied > entry.size { return Err("Backup file exceeded its declared size.".into()); }
+            if copied > entry.size {
+                return Err("Backup file exceeded its declared size.".into());
+            }
             hasher.update(&buffer[..count]);
             if let Some(writer) = output.as_mut() {
-                writer.write_all(&buffer[..count]).map_err(|e| e.to_string())?;
+                writer
+                    .write_all(&buffer[..count])
+                    .map_err(|e| e.to_string())?;
             }
         }
         if copied != entry.size || format!("{:x}", hasher.finalize()) != entry.sha256 {

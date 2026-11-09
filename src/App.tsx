@@ -65,6 +65,7 @@ import {
   emptyStats,
   type Bootstrap,
   type Category,
+  type ConfirmedClaim,
   type DashboardStats,
   type FoundInput,
   type FoundItem,
@@ -878,6 +879,7 @@ function App() {
   const [selectedItem, setSelectedItem] = useState<FoundItem | null>(null);
   const [items, setItems] = useState<FoundItem[]>([]);
   const [lostReports, setLostReports] = useState<LostReport[]>([]);
+  const [preselectedClaim, setPreselectedClaim] = useState<ConfirmedClaim | null>(null);
   const [lostTotal, setLostTotal] = useState(0);
   const [stats, setStats] = useState<DashboardStats>(emptyStats);
   const [retentionRecords, setRetentionRecords] = useState<RetentionRecord[]>([]);
@@ -1547,6 +1549,7 @@ function App() {
               <ReturnForm
                 item={selectedItem}
                 reports={lostReports}
+                preselected={preselectedClaim}
                 busy={busy}
                 required={organization.requireVerification || selectedItem.storageSecure}
                 onSubmit={async (input) => {
@@ -1591,7 +1594,12 @@ function App() {
             locations={data.storageLocations}
             onClose={() => setSelectedItem(null)}
             onEdit={() => setModal("edit")}
-            onReturn={() => setModal("return")}
+            onReturn={async () => {
+              // Preselect the adjudicated claim (if any) before the form mounts.
+              const claim = await api.confirmedClaim(selectedItem.id).catch(() => null);
+              setPreselectedClaim(claim);
+              setModal("return");
+            }}
             onDisposition={() => setModal("disposition")}
             onMove={async (id) => {
               try {
@@ -5051,12 +5059,14 @@ function ItemDrawer({
 function ReturnForm({
   item,
   reports,
+  preselected,
   busy,
   required,
   onSubmit,
 }: {
   item: FoundItem;
   reports: LostReport[];
+  preselected: ConfirmedClaim | null;
   busy: boolean;
   required: boolean;
   onSubmit: (value: {
@@ -5069,10 +5079,25 @@ function ReturnForm({
   }) => void;
 }) {
   const [recipientName, setRecipient] = useState("");
-  const [lostReportId, setReport] = useState("");
+  const [lostReportId, setReport] = useState(preselected?.lostReportId ?? "");
   const [method, setMethod] = useState(required ? "description_confirmed" : "none");
   const [note, setNote] = useState("");
   const [staffNote, setStaffNote] = useState("");
+  const openReportOptions = reports
+    .filter((r) => r.status === "open")
+    .map((r) => ({ value: r.id, label: `${r.reference} · ${r.claimantName} · ${r.name}` }));
+  // The adjudicated claim stays selectable even when the capped lost-report
+  // list does not include it.
+  if (
+    preselected &&
+    lostReportId === preselected.lostReportId &&
+    !openReportOptions.some((o) => o.value === preselected.lostReportId)
+  ) {
+    openReportOptions.unshift({
+      value: preselected.lostReportId,
+      label: `${preselected.reference} · ${preselected.claimantName}`,
+    });
+  }
   return (
     <form
       className="workflow-form"
@@ -5106,15 +5131,20 @@ function ReturnForm({
           placeholder="Who is receiving this item?"
         />
       </Field>
-      <Field label="Related lost report">
+      <Field
+        label="Related lost report"
+        hint={
+          preselected && lostReportId === preselected.lostReportId
+            ? `Preselected from the confirmed claim for ${preselected.claimantName}. Choose another open report if this return matches a different one.`
+            : undefined
+        }
+      >
         <SelectMenu
           ariaLabel="Related lost report"
           value={lostReportId}
           onChange={setReport}
           placeholder="No linked report"
-          options={reports
-            .filter((r) => r.status === "open")
-            .map((r) => ({ value: r.id, label: `${r.reference} · ${r.claimantName} · ${r.name}` }))}
+          options={openReportOptions}
         />
       </Field>
       <div className="return-policy">
@@ -5296,20 +5326,25 @@ function Field({
   required,
   children,
   className = "",
+  hint,
 }: {
   label: string;
   required?: boolean;
   children: React.ReactNode;
   className?: string;
+  hint?: string;
 }) {
   return (
-    <label className={`field ${className}`}>
-      <span>
-        {label}
-        {required && <b> *</b>}
-      </span>
-      {children}
-    </label>
+    <>
+      <label className={`field ${className}`}>
+        <span>
+          {label}
+          {required && <b> *</b>}
+        </span>
+        {children}
+      </label>
+      {hint && <p className="field-hint">{hint}</p>}
+    </>
   );
 }
 function ModalFrame({ children, onClose }: { children: ReactNode; onClose: () => void }) {

@@ -893,6 +893,90 @@ describe("Reclaim application journeys", () => {
     invokeMock.mockImplementation(previous);
   });
 
+  it("preselects the adjudicated lost report when starting a return and lets staff change it", async () => {
+    initialized = true;
+    const previous = invokeMock.getMockImplementation()!;
+    const item = foundItem("item-9", "Blue insulated water bottle");
+    const otherReport = {
+      id: "lost-2",
+      reference: "RCL-2",
+      name: "Gray jacket",
+      categoryId: "clothing",
+      categoryName: "Clothing",
+      description: "Zip pockets",
+      color: "Gray",
+      brand: "",
+      lostAt: "2026-11-06T10:00",
+      lastLocation: "Lobby",
+      claimantName: "Jordan Blake",
+      contact: "jordan@example.test",
+      notes: "",
+      status: "open",
+      createdAt: "2026-11-06T10:00",
+    };
+    invokeMock.mockImplementation(async (command: string, args: Record<string, unknown> = {}) => {
+      if (command === "list_found_items") return { items: [item], total: 1, page: 1, pageSize: 12 };
+      if (command === "item_photo_previews") return [];
+      if (command === "item_activity" || command === "item_photos") return [];
+      if (command === "list_lost_reports") return { reports: [otherReport], total: 1 };
+      // The adjudicated claim for this item; deliberately not in the capped
+      // lost-report list above so the preselection must survive on its own.
+      if (command === "confirmed_claim")
+        return { lostReportId: "lost-9", reference: "RCL-9", claimantName: "Taylor Reed" };
+      return previous(command, args);
+    });
+    render(<App />);
+    const gallery = await screen.findByRole("region", { name: "Recently found item photographs" });
+    fireEvent.click(
+      within(gallery).getByRole("button", {
+        name: "Open details for Blue insulated water bottle, Other — In custody",
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Start return" }));
+    const dialog = await screen.findByRole("dialog", { name: "Return this item" });
+    // The adjudicated claim is preselected and explained, even though the
+    // capped lost-report list does not include it.
+    const trigger = within(dialog).getByRole("combobox", { name: "Related lost report" });
+    expect(trigger).toHaveTextContent("RCL-9 · Taylor Reed");
+    expect(
+      within(dialog).getByText(/Preselected from the confirmed claim for Taylor Reed/),
+    ).toBeInTheDocument();
+    // Staff can commit the preselection as-is...
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    expect(trigger).toHaveTextContent("RCL-9 · Taylor Reed");
+    expect(within(dialog).getByText(/Preselected from the confirmed claim/)).toBeInTheDocument();
+    // ...or choose a different open report; the hint then disappears.
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    const listbox = await screen.findByRole("listbox", { name: "Related lost report" });
+    const options = within(listbox).getAllByRole("option");
+    expect(options).toHaveLength(2);
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    expect(trigger).toHaveTextContent("RCL-2 · Jordan Blake · Gray jacket");
+    expect(within(dialog).queryByText(/Preselected from the confirmed claim/)).toBeNull();
+    fireEvent.change(within(dialog).getByLabelText(/^Recipient name/), {
+      target: { value: "Jordan Blake" },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/^Verification reference or explanation/), {
+      target: { value: "Confirmed the zip pockets" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm return" }));
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("return_found_item", {
+        input: {
+          foundItemId: "item-9",
+          lostReportId: "lost-2",
+          recipientName: "Jordan Blake",
+          verificationMethod: "description_confirmed",
+          verificationNote: "Confirmed the zip pockets",
+          staffNote: "",
+        },
+      }),
+    );
+    invokeMock.mockImplementation(previous);
+  });
+
   it("saves overnight operating hours and blocks ambiguous equal times", async () => {
     const clickContinue = () => {
       const buttons = screen.getAllByRole("button", { name: /continue/i });

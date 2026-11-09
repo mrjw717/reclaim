@@ -475,6 +475,14 @@ pub struct CompetingClaim {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ConfirmedClaim {
+    pub lost_report_id: String,
+    pub reference: String,
+    pub claimant_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReturnInput {
     pub found_item_id: String,
     pub lost_report_id: Option<String>,
@@ -1003,6 +1011,29 @@ pub fn move_found(
     tx.commit().map_err(db_error)
 }
 
+/// The adjudicated (confirmed) lost report for an item, when that report is
+/// still open. Used to preselect the report when staff start the matching
+/// return; staff remain free to choose a different open report.
+pub fn confirmed_claim(
+    conn: &Connection,
+    found_item_id: &str,
+) -> Result<Option<ConfirmedClaim>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT m.lost_report_id,r.reference,r.claimant_name FROM match_reviews m JOIN lost_reports r ON r.id=m.lost_report_id WHERE m.found_item_id=?1 AND m.status='confirmed' AND r.status='open' ORDER BY m.updated_at DESC LIMIT 1",
+        )
+        .map_err(db_error)?;
+    let mut rows = stmt.query([found_item_id]).map_err(db_error)?;
+    match rows.next().map_err(db_error)? {
+        Some(row) => Ok(Some(ConfirmedClaim {
+            lost_report_id: row.get(0).map_err(db_error)?,
+            reference: row.get(1).map_err(db_error)?,
+            claimant_name: row.get(2).map_err(db_error)?,
+        })),
+        None => Ok(None),
+    }
+}
+
 pub fn return_found(
     conn: &mut Connection,
     input: ReturnInput,
@@ -1051,6 +1082,10 @@ pub fn return_found(
         let conflicting_claim:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM match_reviews WHERE found_item_id=?1 AND lost_report_id<>?2 AND status='confirmed')",params![input.found_item_id,report_id],|r|r.get(0)).map_err(db_error)?;
         if conflicting_claim {
             return Err("This item is already associated with another claimant. Review the competing claims before completing a return.".into());
+        }
+        let linked_elsewhere:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM match_reviews WHERE lost_report_id=?1 AND found_item_id<>?2 AND status='confirmed')",params![report_id,input.found_item_id],|r|r.get(0)).map_err(db_error)?;
+        if linked_elsewhere {
+            return Err("This lost report is already associated with a different item. Choose the report that matches this return.".into());
         }
     }
     let happened = now();

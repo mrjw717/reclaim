@@ -114,6 +114,11 @@ export type MatchCandidate = {
   reviewStatus: string;
   competingClaims: CompetingClaim[];
 };
+export type ConfirmedClaim = {
+  lostReportId: string;
+  reference: string;
+  claimantName: string;
+};
 export type ReturnInput = {
   foundItemId: string;
   lostReportId: string | null;
@@ -259,6 +264,8 @@ export const api = {
     invoke<void>("review_match", { lostReportId, foundItemId, status }),
   adjudicateMatch: (lostReportId: string, foundItemId: string) =>
     invoke<void>("adjudicate_match", { lostReportId, foundItemId }),
+  confirmedClaim: (foundItemId: string) =>
+    invoke<ConfirmedClaim | null>("confirmed_claim", { foundItemId }),
   itemActivity: (recordType: string, recordId: string) =>
     invoke<
       {

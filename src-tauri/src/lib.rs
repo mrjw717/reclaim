@@ -385,6 +385,14 @@ fn matching_candidates(
 }
 
 #[tauri::command]
+fn confirmed_claim(
+    state: State<'_, AppState>,
+    found_item_id: String,
+) -> Result<Option<db::ConfirmedClaim>, String> {
+    with_db(&state, |conn| db::confirmed_claim(conn, &found_item_id))
+}
+
+#[tauri::command]
 fn review_match(
     state: State<'_, AppState>,
     lost_report_id: String,
@@ -1011,6 +1019,7 @@ pub fn run() {
             return_found_item,
             dispose_found_item,
             matching_candidates,
+            confirmed_claim,
             review_match,
             adjudicate_match,
             item_activity,
@@ -2265,6 +2274,115 @@ mod tests {
         assert!(db::return_found(&mut conn, valid, false, "").is_err());
         let count:i64=conn.query_row("SELECT count(*) FROM custody_events WHERE record_id=?1 AND event_type='item_returned'",[&item.id],|r|r.get(0)).unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn return_preselects_adjudicated_claim_and_rejects_incompatible_links() {
+        let (mut conn, storage, _secure) = configured_database(30);
+        conn.execute("UPDATE organization SET staff_name='Desk staff'", [])
+            .unwrap();
+        let found = db::create_found(
+            &mut conn,
+            FoundInput {
+                name: "Blue umbrella".into(),
+                category_id: "other".into(),
+                description: "".into(),
+                color: "Blue".into(),
+                brand: "".into(),
+                found_at: db::now(),
+                found_location: "Lobby".into(),
+                storage_location_id: storage.clone(),
+                finder_name: "".into(),
+                finder_contact: "".into(),
+                staff_notes: "".into(),
+            },
+        )
+        .unwrap();
+        let other_item = db::create_found(
+            &mut conn,
+            FoundInput {
+                name: "Gray jacket".into(),
+                category_id: "clothing".into(),
+                description: "".into(),
+                color: "Gray".into(),
+                brand: "".into(),
+                found_at: db::now(),
+                found_location: "Lobby".into(),
+                storage_location_id: storage.clone(),
+                finder_name: "".into(),
+                finder_contact: "".into(),
+                staff_notes: "".into(),
+            },
+        )
+        .unwrap();
+        let adjudicated = make_report(&mut conn, "Blue umbrella", "Alex Rivera");
+        let closed = make_report(&mut conn, "Blue umbrella", "Casey Quinn");
+
+        // Before adjudication there is nothing to preselect.
+        assert!(db::confirmed_claim(&conn, &found.id).unwrap().is_none());
+        db::review_match(&mut conn, &adjudicated.id, &found.id, "confirmed").unwrap();
+        let claim = db::confirmed_claim(&conn, &found.id).unwrap().unwrap();
+        assert_eq!(claim.lost_report_id, adjudicated.id);
+        assert_eq!(claim.claimant_name, "Alex Rivera");
+        // The other item has no adjudicated claim to preselect.
+        assert!(
+            db::confirmed_claim(&conn, &other_item.id)
+                .unwrap()
+                .is_none()
+        );
+
+        // The adjudicated report cannot back a different item's return.
+        let incompatible = db::ReturnInput {
+            found_item_id: other_item.id.clone(),
+            lost_report_id: Some(adjudicated.id.clone()),
+            recipient_name: "Jordan Blake".into(),
+            verification_method: "description_confirmed".into(),
+            verification_note: "Confirmed the shell fabric".into(),
+            staff_note: "".into(),
+        };
+        assert!(db::return_found(&mut conn, incompatible, false, "").is_err());
+
+        // A closed report cannot back a return at all.
+        db::set_lost_status(&mut conn, &closed.id, "closed").unwrap();
+        let with_closed = db::ReturnInput {
+            found_item_id: found.id.clone(),
+            lost_report_id: Some(closed.id.clone()),
+            recipient_name: "Casey Quinn".into(),
+            verification_method: "description_confirmed".into(),
+            verification_note: "Confirmed the curved handle".into(),
+            staff_note: "".into(),
+        };
+        assert!(db::return_found(&mut conn, with_closed, false, "").is_err());
+
+        // Completing the return with the preselected adjudicated report works,
+        // resolves the report, and clears the preselection (it is no longer
+        // open). History is attributed to the configured staff label.
+        let verified = db::ReturnInput {
+            found_item_id: found.id.clone(),
+            lost_report_id: Some(adjudicated.id.clone()),
+            recipient_name: "Alex Rivera".into(),
+            verification_method: "description_confirmed".into(),
+            verification_note: "Confirmed the curved handle".into(),
+            staff_note: "".into(),
+        };
+        db::return_found(&mut conn, verified, false, "Desk staff").unwrap();
+        let report_status: String = conn
+            .query_row(
+                "SELECT status FROM lost_reports WHERE id=?1",
+                [&adjudicated.id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(report_status, "resolved");
+        assert!(db::confirmed_claim(&conn, &found.id).unwrap().is_none());
+        let events: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM custody_events WHERE event_type IN ('claim_confirmed','item_returned') AND staff_name='Desk staff'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(events, 2);
     }
 
     #[test]

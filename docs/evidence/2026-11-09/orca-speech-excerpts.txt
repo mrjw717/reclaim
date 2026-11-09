@@ -1,0 +1,60 @@
+--- onboarding org name field (lines 4-8) ---
+1: main content
+2: Organization name * entry e.g.
+3:  Northside Community Center required.
+4: invalid entry.
+5: Focus mode
+--- onboarding location step (lines 30-34) ---
+1: opens listbox
+2: Location name * entry Main location required.
+3: Street address entry 123 Main Street.
+4: 1
+5: 2
+--- found-item dialog (lines 71-75) ---
+1: Browse mode
+2: Register a found item dialog
+3: Close button.
+4: Item name * entry e.g.
+5:  Navy blue water bottle required.
+--- category combobox typeahead (lines 92-96) ---
+1: a
+2: Category editable combo box Category.
+3: opens listbox
+4: Phones & Mobile Devices.
+5: Item name * entry Blue Um required.
+--- lost report dialog (lines 268-272) ---
+1: Browse mode
+2: Create a lost report dialog
+3: Close button.
+4: Item name * entry What are they looking for? required.
+5: invalid entry.
+--- match review dialog (lines 388-392) ---
+1: Lost report button.
+2: Blue Umbrella dialog
+3: Close matches button.
+4: alert Information.
+5: Confirm leading claim Select Alex Rivera as the leading claim for Blue Umbrella? Selecting this claimant will be recorded in custody history.
+--- native confirm (lines 391-395) ---
+1: alert Information.
+2: Confirm leading claim Select Alex Rivera as the leading claim for Blue Umbrella? Selecting this claimant will be recorded in custody history.
+3:  The item remains in custody until a verified return.
+4: main content
+5: Blue Umbrella dialog
+--- return dialog (lines 408-412) ---
+1: Start return button.
+2: Return this item dialog
+3: Close button.
+4: Recipient name * entry Who is receiving this item? required.
+5: invalid entry.
+--- preselected combobox focus (lines 414-418) ---
+1: tab
+2: Related lost report editable combo box Related lost report.
+3: opens listbox
+4: num lock on
+5: num lock off
+--- preselection hint via browse navigation (lines 421-425) ---
+1: insert
+2: Browse mode
+3: Preselected from the confirmed claim for Alex Rivera.
+4:  Choose another open report if this 
+5: return matches a different one.

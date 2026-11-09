@@ -1279,7 +1279,9 @@ describe("Reclaim application journeys", () => {
       // The animated marquee track is wider than its viewport. overflow alone
       // is the visual clip; paint containment additionally scopes hit-testing
       // to the gallery box, and the aria-hidden echo copy never takes input.
-      expect(appCss).toContain(".gallery-viewport { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; overflow: hidden;");
+      expect(appCss).toContain(
+        ".gallery-viewport { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; overflow: hidden;",
+      );
       expect(appCss).toContain("contain: paint;");
       expect(appCss).toContain('.gallery-group[aria-hidden="true"] { pointer-events: none; }');
     });

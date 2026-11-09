@@ -37,6 +37,7 @@ import {
   Headphones,
   IdCard,
   ImageOff,
+  ImagePlus,
   KeyRound,
   Laptop,
   LayoutGrid,
@@ -80,7 +81,7 @@ import {
 } from "./api";
 import packageJson from "../package.json";
 import { BrandIcon, BrandLockup } from "./brand";
-import { BRAND_PALETTE, DEFAULT_BRAND_COLOR } from "./theme-palette";
+import { BRAND_COLOR_NAMES, BRAND_PALETTE, DEFAULT_BRAND_COLOR } from "./theme-palette";
 import "./theme.css";
 import "./App.css";
 import DevAutofill from "./dev/autofill";
@@ -1756,7 +1757,6 @@ function Dashboard({
             <EmptyState
               icon={Package}
               title="Your inventory is ready"
-              text="Items you register will appear here, with their storage details and reference numbers."
               action="Register a found item"
               onClick={onFound}
             />
@@ -2810,8 +2810,8 @@ function SettingsView({
                         <ChevronDown size={14} />
                       </button>
                     </span>
-                    <span className="item-icon mint">
-                      <Icon size={17} />
+                    <span className="item-icon brand">
+                      <Icon size={22} />
                     </span>
                     <div>
                       <strong>{category.name}</strong>
@@ -2952,100 +2952,107 @@ function OrganizationSettings({
   }, [dirty, onDirtyChange]);
   return (
     <>
-      <form
-        className="settings-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          onUpdated(form);
-        }}
-      >
-        <div className="panel-heading">
-          <div>
-            <span className="section-kicker">YOUR WORKSPACE</span>
-            <h2>Organization details</h2>
-            <p>These details appear in your local workspace and backup records.</p>
+      <div className="panel-heading">
+        <div>
+          <span className="section-kicker">YOUR WORKSPACE</span>
+          <h2>Organization details</h2>
+          <p>These details appear in your local workspace and backup records.</p>
+        </div>
+        <button className="button button-primary" type="submit" form="org-settings-form">
+          <Check size={15} /> Save changes
+        </button>
+      </div>
+      <div className="settings-body">
+        <form
+          id="org-settings-form"
+          className="settings-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            onUpdated(form);
+          }}
+        >
+          <div className="form-grid">
+            <Field label="Organization name" required>
+              <input value={form.name} onChange={(e) => set("name", e.target.value)} required />
+            </Field>
+            <Field label="Organization type">
+              <input
+                value={form.organizationType}
+                onChange={(e) => set("organizationType", e.target.value)}
+              />
+            </Field>
+            <Field label="Primary phone">
+              <input value={form.phone} onChange={(e) => set("phone", e.target.value)} />
+            </Field>
+            <Field label="Email address">
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => set("email", e.target.value)}
+              />
+            </Field>
+            <Field label="Street address">
+              <input value={form.street} onChange={(e) => set("street", e.target.value)} />
+            </Field>
+            <Field label="City">
+              <input value={form.city} onChange={(e) => set("city", e.target.value)} />
+            </Field>
+            <Field label="State or region">
+              <input value={form.region} onChange={(e) => set("region", e.target.value)} />
+            </Field>
+            <Field label="Postal code">
+              <input value={form.postalCode} onChange={(e) => set("postalCode", e.target.value)} />
+            </Field>
+            <Field label="Country">
+              <input value={form.country} onChange={(e) => set("country", e.target.value)} />
+            </Field>
+            <Field label="Current staff attribution name">
+              <input
+                value={form.staffName}
+                onChange={(e) => set("staffName", e.target.value)}
+                maxLength={80}
+                required
+              />
+            </Field>
           </div>
-          <button className="button button-primary" type="submit">
-            <Check size={15} /> Save changes
-          </button>
-        </div>
-        <div className="form-grid">
-          <Field label="Organization name" required>
-            <input value={form.name} onChange={(e) => set("name", e.target.value)} required />
-          </Field>
-          <Field label="Organization type">
-            <input
-              value={form.organizationType}
-              onChange={(e) => set("organizationType", e.target.value)}
-            />
-          </Field>
-          <Field label="Primary phone">
-            <input value={form.phone} onChange={(e) => set("phone", e.target.value)} />
-          </Field>
-          <Field label="Email address">
-            <input type="email" value={form.email} onChange={(e) => set("email", e.target.value)} />
-          </Field>
-          <Field label="Street address">
-            <input value={form.street} onChange={(e) => set("street", e.target.value)} />
-          </Field>
-          <Field label="City">
-            <input value={form.city} onChange={(e) => set("city", e.target.value)} />
-          </Field>
-          <Field label="State or region">
-            <input value={form.region} onChange={(e) => set("region", e.target.value)} />
-          </Field>
-          <Field label="Postal code">
-            <input value={form.postalCode} onChange={(e) => set("postalCode", e.target.value)} />
-          </Field>
-          <Field label="Country">
-            <input value={form.country} onChange={(e) => set("country", e.target.value)} />
-          </Field>
-          <Field label="Current staff attribution name">
-            <input
-              value={form.staffName}
-              onChange={(e) => set("staffName", e.target.value)}
-              maxLength={80}
-              required
-            />
-          </Field>
-        </div>
-        <LogoAndColor
-          primaryColor={form.primaryColor}
-          logoDataUrl={form.logoDataUrl}
-          onColor={(value) => setForm((f) => ({ ...f, primaryColor: value }))}
-          onLogo={(value) => setForm((f) => ({ ...f, logoDataUrl: value }))}
-        />
-        <HoursEditor
-          value={form.operatingHours}
-          onChange={(value) => set("operatingHours", value)}
-          locale={form.locale}
-        />
-        {form.legacyOperatingHours && (
+          <LogoAndColor
+            primaryColor={form.primaryColor}
+            logoDataUrl={form.logoDataUrl}
+            onColor={(value) => setForm((f) => ({ ...f, primaryColor: value }))}
+            onLogo={(value) => setForm((f) => ({ ...f, logoDataUrl: value }))}
+          />
+          <HoursEditor
+            value={form.operatingHours}
+            onChange={(value) => set("operatingHours", value)}
+            locale={form.locale}
+          />
+          {form.legacyOperatingHours && (
+            <div className="settings-note">
+              <CircleHelp size={16} />
+              <span>
+                Previous operating-hours text was preserved during the upgrade: “
+                {form.legacyOperatingHours}”. Review and replace it with the structured weekly
+                schedule above.
+              </span>
+            </div>
+          )}
           <div className="settings-note">
             <CircleHelp size={16} />
             <span>
-              Previous operating-hours text was preserved during the upgrade: “
-              {form.legacyOperatingHours}”. Review and replace it with the structured weekly
-              schedule above.
+              {form.staffName} is an offline attribution label used in custody history. Reclaim does
+              not authenticate staff accounts or enforce role permissions.
             </span>
           </div>
-        )}
-        <div className="settings-note">
-          <CircleHelp size={16} />
-          <span>
-            {form.staffName} is an offline attribution label used in custody history. Reclaim does
-            not authenticate staff accounts or enforce role permissions.
-          </span>
-        </div>
-        <div className="settings-note">
-          <ShieldCheck size={16} />
-          <span>
-            Reclaim stores these records in the app data folder on this computer. Your workspace
-            does not require an online account.
-          </span>
-        </div>
-      </form>
-      <OrganizationLocations />
+          <div className="settings-note">
+            <ShieldCheck size={16} />
+            <span>
+              Reclaim stores these records in the app data folder on this computer. Your workspace
+              does not require an online account.
+            </span>
+          </div>
+        </form>
+        <OrganizationLocations />
+      </div>
     </>
   );
 }
@@ -3058,76 +3065,79 @@ function PolicySettings({
 }) {
   const [form, setForm] = useState(organization);
   return (
-    <form
-      className="settings-form"
-      onSubmit={(e) => {
-        e.preventDefault();
-        onUpdated(form);
-      }}
-    >
+    <>
       <div className="panel-heading">
         <div>
           <span className="section-kicker">RETURN &amp; RETENTION</span>
           <h2>Operational policies</h2>
           <p>Set defaults for how long property is held and what staff record at return.</p>
         </div>
-        <button className="button button-primary" type="submit">
+        <button className="button button-primary" type="submit" form="policies-form">
           <Check size={15} /> Save policies
         </button>
       </div>
-      <div className="policy-setting">
-        <div>
-          <strong>Default retention period</strong>
-          <p>
-            How many days an unclaimed item is held before a staff member reviews it for
-            disposition.
-          </p>
+      <form
+        id="policies-form"
+        className="settings-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onUpdated(form);
+        }}
+      >
+        <div className="policy-setting">
+          <div>
+            <strong>Default retention period</strong>
+            <p>
+              How many days an unclaimed item is held before a staff member reviews it for
+              disposition.
+            </p>
+          </div>
+          <label className="input-with-suffix">
+            <input
+              type="number"
+              min="1"
+              max="3650"
+              value={form.retentionDays}
+              onChange={(e) => setForm({ ...form, retentionDays: Number(e.target.value) })}
+            />
+            <span>days</span>
+          </label>
         </div>
-        <label className="input-with-suffix">
+        <label className="behavior-choice">
+          <span className="choice-check">{form.requireVerification && <Check size={13} />}</span>
+          <span>
+            <strong>Require ownership verification for every return</strong>
+            <small>
+              Secure storage always requires verification, even if this default is turned off.
+            </small>
+          </span>
           <input
-            type="number"
-            min="1"
-            max="3650"
-            value={form.retentionDays}
-            onChange={(e) => setForm({ ...form, retentionDays: Number(e.target.value) })}
+            type="checkbox"
+            checked={form.requireVerification}
+            onChange={(e) => setForm({ ...form, requireVerification: e.target.checked })}
           />
-          <span>days</span>
         </label>
-      </div>
-      <label className="behavior-choice">
-        <span className="choice-check">{form.requireVerification && <Check size={13} />}</span>
-        <span>
-          <strong>Require ownership verification for every return</strong>
-          <small>
-            Secure storage always requires verification, even if this default is turned off.
-          </small>
-        </span>
-        <input
-          type="checkbox"
-          checked={form.requireVerification}
-          onChange={(e) => setForm({ ...form, requireVerification: e.target.checked })}
-        />
-      </label>
-      <label className="behavior-choice">
-        <span className="choice-check">{form.allowAnonymousFinders && <Check size={13} />}</span>
-        <span>
-          <strong>Allow staff to record anonymous finders</strong>
-          <small>Finder contact details remain optional on an item record.</small>
-        </span>
-        <input
-          type="checkbox"
-          checked={form.allowAnonymousFinders}
-          onChange={(e) => setForm({ ...form, allowAnonymousFinders: e.target.checked })}
-        />
-      </label>
-      <div className="settings-note">
-        <CircleHelp size={16} />
-        <span>
-          Retention dates flag items for staff review. Reclaim will never dispose of property
-          automatically. Apply your organization’s local rules.
-        </span>
-      </div>
-    </form>
+        <label className="behavior-choice">
+          <span className="choice-check">{form.allowAnonymousFinders && <Check size={13} />}</span>
+          <span>
+            <strong>Allow staff to record anonymous finders</strong>
+            <small>Finder contact details remain optional on an item record.</small>
+          </span>
+          <input
+            type="checkbox"
+            checked={form.allowAnonymousFinders}
+            onChange={(e) => setForm({ ...form, allowAnonymousFinders: e.target.checked })}
+          />
+        </label>
+        <div className="settings-note">
+          <CircleHelp size={16} />
+          <span>
+            Retention dates flag items for staff review. Reclaim will never dispose of property
+            automatically. Apply your organization’s local rules.
+          </span>
+        </div>
+      </form>
+    </>
   );
 }
 function OrganizationLocations() {
@@ -3348,6 +3358,9 @@ function DataSettings({ onBackup, onRestore }: { onBackup: () => void; onRestore
           <h2>Backup &amp; restore</h2>
           <p>Keep a verified copy of your database and item photos somewhere safe.</p>
         </div>
+        <button className="button button-primary" onClick={onBackup}>
+          <Archive size={15} /> Create a backup
+        </button>
       </div>
       <div className="data-summary">
         <span className="data-icon">
@@ -3363,25 +3376,12 @@ function DataSettings({ onBackup, onRestore }: { onBackup: () => void; onRestore
       </div>
       <div className="data-actions">
         <article>
-          <div className="data-action-icon">
-            <ArrowUpRight size={17} />
-          </div>
-          <h3>Create a backup</h3>
-          <p>
-            Exports a consistent database snapshot, item photos, and an integrity manifest to a
-            location you choose.
-          </p>
-          <button className="button button-primary" onClick={onBackup}>
-            Choose backup destination <ArrowRight size={14} />
-          </button>
-        </article>
-        <article>
           <div className="data-action-icon restore">
             <ArrowDownRight size={17} />
           </div>
           <h3>Restore a workspace</h3>
           <p>
-            Validates the archive and replaces the current workspace after you confirm. Failed
+            Validates a backup archive and replaces the current workspace after you confirm. Failed
             restores recover the prior data.
           </p>
           <button className="button button-secondary" onClick={onRestore}>
@@ -3600,36 +3600,38 @@ function LogoAndColor({
         <span className="field-label">
           Organization logo <small>Optional · PNG, JPEG, WebP · up to 2 MB</small>
         </span>
-        <div className="logo-preview">
-          {logoDataUrl ? (
-            <img src={logoDataUrl} alt="Organization logo preview" />
-          ) : (
-            <span>{"Logo"}</span>
+        <div className="logo-row">
+          <label className={logoDataUrl ? "logo-tile filled" : "logo-tile empty"}>
+            <input
+              aria-label={logoDataUrl ? "Replace organization logo" : "Add organization logo"}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(e) => read(e.currentTarget.files?.[0])}
+            />
+            {logoDataUrl ? (
+              <img src={logoDataUrl} alt="Organization logo preview" />
+            ) : (
+              <>
+                <ImagePlus size={20} aria-hidden="true" />
+                <small>Add logo</small>
+              </>
+            )}
+          </label>
+          {logoDataUrl && (
+            <button
+              type="button"
+              className="button button-quiet button-small"
+              onClick={() => onLogo(null)}
+            >
+              Remove logo
+            </button>
+          )}
+          {error && (
+            <span role="alert" className="hours-error">
+              {error}
+            </span>
           )}
         </div>
-        <label className="button button-secondary button-small">
-          {logoDataUrl ? "Replace logo" : "Upload logo"}
-          <input
-            aria-label="Upload organization logo"
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            onChange={(e) => read(e.currentTarget.files?.[0])}
-          />
-        </label>
-        {logoDataUrl && (
-          <button
-            type="button"
-            className="button button-quiet button-small"
-            onClick={() => onLogo(null)}
-          >
-            Remove logo
-          </button>
-        )}
-        {error && (
-          <span role="alert" className="hours-error">
-            {error}
-          </span>
-        )}
       </div>
       <fieldset className="brand-color-control">
         <legend>Primary brand color</legend>
@@ -3638,9 +3640,10 @@ function LogoAndColor({
             <button
               key={color}
               type="button"
-              aria-label={`Use brand color ${color}`}
+              aria-label={`Use ${BRAND_COLOR_NAMES[color]} brand color`}
               aria-pressed={primaryColor.toLowerCase() === color}
               style={{ backgroundColor: color }}
+              title={BRAND_COLOR_NAMES[color]}
               onClick={() => onColor(color)}
             />
           ))}
@@ -3668,12 +3671,6 @@ function LogoAndColor({
             Choose a color with at least 4.5:1 contrast against white text.
           </small>
         )}
-        <div className="brand-preview">
-          <button className="button button-primary" disabled={!accessibleBrandColor(primaryColor)}>
-            Preview action
-          </button>
-          <span>Primary action preview</span>
-        </div>
       </fieldset>
     </div>
   );
@@ -5309,7 +5306,7 @@ function EmptyState({
 }: {
   icon: LucideIcon;
   title: string;
-  text: string;
+  text?: string;
   action?: string;
   actionIcon?: LucideIcon;
   onClick?: () => void;
@@ -5320,7 +5317,7 @@ function EmptyState({
         <Icon size={22} />
       </span>
       <strong>{title}</strong>
-      <p>{text}</p>
+      {text && <p>{text}</p>}
       {action && (
         <button className="button button-secondary" onClick={onClick}>
           <ActionIcon size={15} />

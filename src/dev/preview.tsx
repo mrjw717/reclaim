@@ -37,6 +37,19 @@ if (requestedView) {
     target?.click();
   }, 150);
 }
+// Development-only: `?settingsSection=categories` selects a Settings section
+// after the Settings screen mounts so sweeps can capture each section.
+const requestedSettingsSection = new URLSearchParams(window.location.search).get("settingsSection");
+if (requestedSettingsSection && requestedView?.toLowerCase() === "settings") {
+  window.setTimeout(() => {
+    const target = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".settings-nav button"),
+    ).find((button) =>
+      button.textContent?.trim().toLowerCase().startsWith(requestedSettingsSection),
+    );
+    target?.click();
+  }, 350);
+}
 // Development-only: `?inventoryView=gallery` selects the gallery radio after
 // the Found items screen mounts so visual sweeps can capture both views.
 const requestedInventoryView = new URLSearchParams(window.location.search).get("inventoryView");

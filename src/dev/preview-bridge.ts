@@ -319,6 +319,10 @@ const handlers: Record<string, CommandHandler> = {
   }),
   update_organization: (args) => Object.assign(organization, args.organization),
   list_found_items: (args) => {
+    // Development-only: `?emptyOverview=1` renders the dashboard empty state.
+    if (new URLSearchParams(window.location.search).has("emptyOverview")) {
+      return { items: [], total: 0, page: 1, pageSize: 10 };
+    }
     // Mirror the native backend's filtering so rendered sweeps exercise the
     // same query path as the real command (case-insensitive substring).
     const query = String(args?.query ?? "")

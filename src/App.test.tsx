@@ -941,6 +941,10 @@ describe("Reclaim application journeys", () => {
     expect(
       within(dialog).getByText(/Preselected from the confirmed claim for Taylor Reed/),
     ).toBeInTheDocument();
+    // The preselection hint is the trigger's accessible description, so screen
+    // readers announce the context when focus lands on the combobox.
+    const hint = within(dialog).getByText(/Preselected from the confirmed claim/);
+    expect(trigger).toHaveAttribute("aria-describedby", hint.id);
     // Staff can commit the preselection as-is...
     fireEvent.keyDown(trigger, { key: "ArrowDown" });
     fireEvent.keyDown(trigger, { key: "Enter" });
@@ -955,6 +959,7 @@ describe("Reclaim application journeys", () => {
     fireEvent.keyDown(trigger, { key: "Enter" });
     expect(trigger).toHaveTextContent("RCL-2 · Jordan Blake · Gray jacket");
     expect(within(dialog).queryByText(/Preselected from the confirmed claim/)).toBeNull();
+    expect(trigger).not.toHaveAttribute("aria-describedby");
     fireEvent.change(within(dialog).getByLabelText(/^Recipient name/), {
       target: { value: "Jordan Blake" },
     });

@@ -415,12 +415,15 @@ function SelectMenu({
   options,
   ariaLabel,
   placeholder = "",
+  ariaDescribedby,
 }: {
   value: string;
   onChange: (value: string) => void;
   options: SelectOption[];
   ariaLabel: string;
   placeholder?: string;
+  /** Optional aria-describedby target: context read by screen readers on focus. */
+  ariaDescribedby?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -587,6 +590,7 @@ function SelectMenu({
           open && activeIndex >= 0 ? `${listId}-opt-${activeIndex}` : undefined
         }
         aria-label={ariaLabel}
+        aria-describedby={ariaDescribedby}
         className={open ? "select-trigger open" : "select-trigger"}
         onClick={() => (open ? setOpen(false) : openList())}
         onKeyDown={onKeyDown}
@@ -5083,6 +5087,7 @@ function ReturnForm({
   const [method, setMethod] = useState(required ? "description_confirmed" : "none");
   const [note, setNote] = useState("");
   const [staffNote, setStaffNote] = useState("");
+  const hintId = useId();
   const openReportOptions = reports
     .filter((r) => r.status === "open")
     .map((r) => ({ value: r.id, label: `${r.reference} · ${r.claimantName} · ${r.name}` }));
@@ -5133,6 +5138,7 @@ function ReturnForm({
       </Field>
       <Field
         label="Related lost report"
+        hintId={hintId}
         hint={
           preselected && lostReportId === preselected.lostReportId
             ? `Preselected from the confirmed claim for ${preselected.claimantName}. Choose another open report if this return matches a different one.`
@@ -5141,6 +5147,9 @@ function ReturnForm({
       >
         <SelectMenu
           ariaLabel="Related lost report"
+          ariaDescribedby={
+            preselected && lostReportId === preselected.lostReportId ? hintId : undefined
+          }
           value={lostReportId}
           onChange={setReport}
           placeholder="No linked report"
@@ -5327,13 +5336,18 @@ function Field({
   children,
   className = "",
   hint,
+  hintId,
 }: {
   label: string;
   required?: boolean;
   children: React.ReactNode;
   className?: string;
   hint?: string;
+  /** Element id for the hint paragraph, so controls can aria-describedby it. */
+  hintId?: string;
 }) {
+  const autoHintId = useId();
+  const id = hintId ?? autoHintId;
   return (
     <>
       <label className={`field ${className}`}>
@@ -5343,7 +5357,11 @@ function Field({
         </span>
         {children}
       </label>
-      {hint && <p className="field-hint">{hint}</p>}
+      {hint && (
+        <p className="field-hint" id={id}>
+          {hint}
+        </p>
+      )}
     </>
   );
 }

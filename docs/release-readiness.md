@@ -125,11 +125,11 @@ The workspace identity is `df124e5b-db72-41d0-8ec8-10ba2574e5cb`; the checkout i
 
 ## Linux package artifacts
 
-Built on Ubuntu 26.04.1 LTS, x86_64, with Rust and Tauri CLI (release toolchain), then the deb was license-patched by `scripts/patch-deb-license.sh`. Current qualified artifacts (superseding all earlier byte counts and hashes; **2026-11-09, built from commit `dcb8d2b`**):
+Built on Ubuntu 26.04.1 LTS, x86_64, with Rust and Tauri CLI (release toolchain), then the deb was license-patched by `scripts/patch-deb-license.sh`. Current qualified artifacts (superseding all earlier byte counts and hashes; **2026-11-09, built from commit `3903635`**):
 
 | Artifact | Size | SHA-256 | Container install check |
 |---|---:|---|---|
-| `src-tauri/target/release/bundle/deb/Reclaim_0.1.0_amd64.deb` | 4,509,804 bytes | `e378f7b27847f85d469c37803173bfc05643322cc26651683b4e488c5b0886ac` | 2026-11-09 rebuild from `dcb8d2b` (return preselection, onboarding repair, and the owner UI batch); license-patched, `SHA256SUMS` verified with `sha256sum -c`. The previous source state (`ee3d264`, deb `0861f6b1…`) was exercised through the isolated screen-reader container with full journeys incl. the preselected verified return (SQLite `integrity_check=ok`); the only later source changes are the documented UI batch |
+| `src-tauri/target/release/bundle/deb/Reclaim_0.1.0_amd64.deb` | 4,511,154 bytes | `2b56f6366c1d18ff92277aab4a9df1ee11fb032d2fcb73478c32643323ed410c` | 2026-11-09 rebuild from `3903635` (return preselection, onboarding repair, owner UI batch, appearance spacing, click-only update checker); license-patched, `SHA256SUMS` verified with `sha256sum -c`. The immediately preceding source state (deb `e378f7b2…`) was exercised through the isolated screen-reader container with full journeys incl. the preselected verified return (SQLite `integrity_check=ok`); later source changes are the documented update-check/margins batch |
 | `src-tauri/target/release/bundle/rpm/Reclaim-0.1.0-1.x86_64.rpm` | 4,601,087 bytes | `449b7e106d156fcde42d84e3476ca58f26c586184145ef067e3bee9c9ce95abd` | 2026-11-09 rebuild from the same commit; license payload unchanged (`License: MIT`); `SHA256SUMS` verified. Fresh-container install/startup of these exact bytes was not repeated this session; the 2026-11-09 deb bytes carry the same runtime source |
 
 Checksums are also in `src-tauri/target/release/bundle/SHA256SUMS` and verified with `sha256sum -c`. Those paths are build output and are intentionally ignored by Git.

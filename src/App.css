@@ -318,6 +318,12 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .field select { appearance: none; background-image: linear-gradient(45deg,var(--surface-transparent) 50%,var(--text-muted) 50%),linear-gradient(135deg,var(--text-muted) 50%,var(--surface-transparent) 50%); background-position: calc(100% - 13px) 15px,calc(100% - 9px) 15px; background-size: 4px 4px,4px 4px; background-repeat: no-repeat; padding-right: 26px; }
 .field.span-two { grid-column: span 2; }
 .settings-note { margin: 0 22px 7px; padding: 11px; display: flex; gap: 8px; border-radius: 8px; background: var(--surface-primary); color: var(--text-muted); font-size: calc(max(12px, 9px) * var(--reclaim-ui-scale, 1)); line-height: 1.5; }
+.appearance-settings { display: flex; flex-direction: column; }
+/* The text/interface-size block matches the section's 22px side rhythm. */
+.appearance-size { margin: 17px 22px 6px; display: flex; flex-direction: column; gap: 4px; }
+.appearance-size h3 { margin: 0; color: var(--text-secondary); font: 700 calc(max(12px, 12px) * var(--reclaim-ui-scale, 1)) Manrope,sans-serif; }
+.appearance-size p { margin: 0 0 8px; color: var(--text-muted); font-size: calc(max(12px, 9px) * var(--reclaim-ui-scale, 1)); line-height: 1.5; }
+.appearance-settings .settings-note { margin-top: 12px; }
 .settings-note svg { color: var(--text-muted); flex: 0 0 auto; }
 .theme-options { display: flex; flex-direction: column; gap: 8px; padding: 17px 22px; }
 .theme-option { min-height: 72px; display: flex; align-items: center; gap: 12px; padding: 10px; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--surface-primary); text-align: left; cursor: pointer; }
@@ -341,6 +347,17 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .data-status { display: flex; align-items: center; gap: 5px; color: var(--text-muted); font-size: calc(max(12px, 8px) * var(--reclaim-ui-scale, 1)); }
 .data-status i { width: 5px; height: 5px; border-radius: 50%; background: var(--accent-green-surface); }
 .data-actions { display: grid; grid-template-columns: minmax(0, 480px); gap: 9px; padding: 0 22px 17px; }
+/* Manual update check: never fires on its own; one GitHub request per click. */
+.update-check { margin: 15px 22px 0; padding: 13px; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--surface-primary); display: flex; flex-direction: column; gap: 10px; }
+.update-check-copy h3 { margin: 0 0 4px; color: var(--text-secondary); font: 700 calc(max(12px, 11px) * var(--reclaim-ui-scale, 1)) Manrope,sans-serif; }
+.update-check-copy p { margin: 0; color: var(--text-muted); font-size: calc(max(12px, 9px) * var(--reclaim-ui-scale, 1)); line-height: 1.5; }
+.update-check-controls { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.update-check-controls .field { flex: 1 1 240px; min-width: 0; }
+.update-check-controls .button { flex: 0 0 auto; white-space: nowrap; }
+.update-check-result { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--text-secondary); font-size: calc(max(12px, 9px) * var(--reclaim-ui-scale, 1)); line-height: 1.5; flex-wrap: wrap; }
+.update-check-result svg { flex: 0 0 auto; }
+.spin { animation: reclaim-spin 1s linear infinite; }
+@keyframes reclaim-spin { to { transform: rotate(360deg); } }
 .data-actions article { min-height: 0; padding: 13px; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--surface-primary); }
 .data-action-icon { width: 30px; height: 30px; }.data-action-icon.restore { color: var(--accent-blue-foreground); background: var(--surface-secondary); }
 .data-actions h3 { margin: 10px 0 5px; color: var(--text-secondary); font: 700 calc(max(12px, 11px) * var(--reclaim-ui-scale, 1)) Manrope,sans-serif; }

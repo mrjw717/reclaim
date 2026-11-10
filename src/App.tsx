@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { confirm as confirmDialog, message as messageDialog } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Archive,
   ArrowDownRight,
@@ -42,6 +43,7 @@ import {
   Laptop,
   LayoutGrid,
   List,
+  LoaderCircle,
   MapPin,
   MoreHorizontal,
   Package,
@@ -70,6 +72,7 @@ import {
   type DashboardStats,
   type FoundInput,
   type FoundItem,
+  type GithubRelease,
   type LostInput,
   type LostReport,
   type MatchCandidate,
@@ -3349,7 +3352,49 @@ function AppearanceSettings({
     </div>
   );
 }
+/** True when `tag` is a strict three-part semver newer than `current`; null when either is not comparable. */
+export function isNewerRelease(tag: string, current: string): boolean | null {
+  const normalize = (value: string) => value.trim().replace(/^v/i, "").split("-")[0];
+  const parse = (value: string) =>
+    normalize(value)
+      .split(".")
+      .map((part) => Number.parseInt(part, 10));
+  const next = parse(tag);
+  const base = parse(current);
+  if (next.length !== 3 || base.length !== 3) return null;
+  if (next.some(Number.isNaN) || base.some(Number.isNaN)) return null;
+  for (let i = 0; i < 3; i += 1) {
+    if (next[i] !== base[i]) return next[i] > base[i];
+  }
+  return false;
+}
+
 function DataSettings({ onBackup, onRestore }: { onBackup: () => void; onRestore: () => void }) {
+  const [updateRepo, setUpdateRepo] = useState(
+    () => localStorage.getItem("reclaim.updateRepo") ?? "",
+  );
+  const [updateStatus, setUpdateStatus] = useState<
+    | { kind: "idle" }
+    | { kind: "checking" }
+    | { kind: "current" }
+    | { kind: "available"; release: GithubRelease }
+    | { kind: "unparseable"; release: GithubRelease }
+    | { kind: "error"; message: string }
+  >({ kind: "idle" });
+  const checkForUpdates = async () => {
+    const repo = updateRepo.trim();
+    localStorage.setItem("reclaim.updateRepo", repo);
+    setUpdateStatus({ kind: "checking" });
+    try {
+      const release = await api.checkGithubRelease(repo);
+      const newer = isNewerRelease(release.tagName, packageJson.version);
+      if (newer === null) setUpdateStatus({ kind: "unparseable", release });
+      else if (newer) setUpdateStatus({ kind: "available", release });
+      else setUpdateStatus({ kind: "current" });
+    } catch (e) {
+      setUpdateStatus({ kind: "error", message: String(e).replace(/^Error:\s*/, "") });
+    }
+  };
   return (
     <div className="data-settings">
       <div className="panel-heading">
@@ -3361,6 +3406,74 @@ function DataSettings({ onBackup, onRestore }: { onBackup: () => void; onRestore
         <button className="button button-primary" onClick={onBackup}>
           <Archive size={15} /> Create a backup
         </button>
+      </div>
+      <div className="update-check">
+        <div className="update-check-copy">
+          <h3>Software updates</h3>
+          <p>
+            Reclaim never calls out on its own. Checking contacts GitHub.com once — only when you
+            click. Current version: v{packageJson.version}.
+          </p>
+        </div>
+        <div className="update-check-controls">
+          <Field label="GitHub repository">
+            <input
+              aria-label="GitHub repository (owner/name)"
+              value={updateRepo}
+              onChange={(e) => setUpdateRepo(e.target.value)}
+              placeholder="owner/reclaim"
+              maxLength={201}
+            />
+          </Field>
+          <button
+            className="button button-secondary"
+            aria-label="Check for updates"
+            onClick={() => void checkForUpdates()}
+            disabled={updateStatus.kind === "checking"}
+          >
+            {updateStatus.kind === "checking" ? (
+              <>
+                <LoaderCircle size={15} className="spin" /> Checking…
+              </>
+            ) : (
+              "Check for updates"
+            )}
+          </button>
+        </div>
+        {updateStatus.kind === "available" && (
+          <p className="update-check-result" role="status">
+            <TriangleAlert size={15} />
+            Version {updateStatus.release.tagName} is available (
+            {updateStatus.release.name || "release"}).{" "}
+            <button
+              className="text-button"
+              onClick={() => void openUrl(updateStatus.release.htmlUrl)}
+            >
+              Release notes <ArrowRight size={13} />
+            </button>
+          </p>
+        )}
+        {updateStatus.kind === "current" && (
+          <p className="update-check-result" role="status">
+            <Check size={15} /> You are up to date — v{packageJson.version} is the newest release.
+          </p>
+        )}
+        {updateStatus.kind === "unparseable" && (
+          <p className="update-check-result" role="status">
+            Latest release: {updateStatus.release.tagName} ({updateStatus.release.name}).{" "}
+            <button
+              className="text-button"
+              onClick={() => void openUrl(updateStatus.release.htmlUrl)}
+            >
+              Release notes <ArrowRight size={13} />
+            </button>
+          </p>
+        )}
+        {updateStatus.kind === "error" && (
+          <p className="update-check-result" role="alert">
+            <TriangleAlert size={15} /> {updateStatus.message}
+          </p>
+        )}
       </div>
       <div className="data-summary">
         <span className="data-icon">

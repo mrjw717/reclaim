@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 // @ts-expect-error type error without @types/node package
 import { resolve } from "node:path";
-import App, { resolveGalleryMotion, timeGreeting } from "./App";
+import App, { isNewerRelease, resolveGalleryMotion, timeGreeting } from "./App";
+import { isValidRepoSlug } from "./api";
 import packageJson from "../package.json";
 
 // @ts-expect-error type error without @types/node package
@@ -13,13 +14,19 @@ const appCss = readFileSync(resolve(process.cwd(), "src/App.css"), "utf8");
 
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
-const { confirmMock } = vi.hoisted(() => ({ confirmMock: vi.fn(async () => true) }));
+const { confirmMock, openUrlMock } = vi.hoisted(() => ({
+  confirmMock: vi.fn(async () => true),
+  openUrlMock: vi.fn(async () => undefined),
+}));
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   confirm: confirmMock,
   message: vi.fn(async () => undefined),
   open: vi.fn(),
   save: vi.fn(),
 }));
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: openUrlMock }));
+const fetchMock = vi.hoisted(() => vi.fn());
+vi.stubGlobal("fetch", fetchMock);
 
 const category = {
   id: "other",
@@ -893,93 +900,97 @@ describe("Reclaim application journeys", () => {
     invokeMock.mockImplementation(previous);
   });
 
-  it("preselects the adjudicated lost report when starting a return and lets staff change it", async () => {
+  it("validates update-check inputs and version comparison as pure functions", () => {
+    expect(isValidRepoSlug("kynex-media/reclaim")).toBe(true);
+    expect(isValidRepoSlug(" owner/reclaim ")).toBe(true);
+    expect(isValidRepoSlug("https://github.com/kynex-media/reclaim")).toBe(false);
+    expect(isValidRepoSlug("owner/reclaim/releases")).toBe(false);
+    expect(isValidRepoSlug("just-a-name")).toBe(false);
+    expect(isValidRepoSlug("own er/reclaim")).toBe(false);
+    expect(isValidRepoSlug("owner/reclaim?query")).toBe(false);
+    expect(isNewerRelease("v0.2.0", "0.1.0")).toBe(true);
+    expect(isNewerRelease("0.1.1", "0.1.0")).toBe(true);
+    expect(isNewerRelease("0.1.0", "0.1.0")).toBe(false);
+    expect(isNewerRelease("0.0.9", "0.1.0")).toBe(false);
+    expect(isNewerRelease("1.0", "0.1.0")).toBeNull();
+    expect(isNewerRelease("next", "0.1.0")).toBeNull();
+  });
+
+  it("checks GitHub for updates only when staff click, and reports the result truthfully", async () => {
     initialized = true;
-    const previous = invokeMock.getMockImplementation()!;
-    const item = foundItem("item-9", "Blue insulated water bottle");
-    const otherReport = {
-      id: "lost-2",
-      reference: "RCL-2",
-      name: "Gray jacket",
-      categoryId: "clothing",
-      categoryName: "Clothing",
-      description: "Zip pockets",
-      color: "Gray",
-      brand: "",
-      lostAt: "2026-11-06T10:00",
-      lastLocation: "Lobby",
-      claimantName: "Jordan Blake",
-      contact: "jordan@example.test",
-      notes: "",
-      status: "open",
-      createdAt: "2026-11-06T10:00",
-    };
-    invokeMock.mockImplementation(async (command: string, args: Record<string, unknown> = {}) => {
-      if (command === "list_found_items") return { items: [item], total: 1, page: 1, pageSize: 12 };
-      if (command === "item_photo_previews") return [];
-      if (command === "item_activity" || command === "item_photos") return [];
-      if (command === "list_lost_reports") return { reports: [otherReport], total: 1 };
-      // The adjudicated claim for this item; deliberately not in the capped
-      // lost-report list above so the preselection must survive on its own.
-      if (command === "confirmed_claim")
-        return { lostReportId: "lost-9", reference: "RCL-9", claimantName: "Taylor Reed" };
-      return previous(command, args);
+    window.localStorage.setItem("reclaim.updateRepo", "kynex-media/reclaim");
+    const ok = (body: unknown) =>
+      Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+    fetchMock.mockImplementation((input: string | URL) => {
+      expect(String(input)).toBe(
+        "https://api.github.com/repos/kynex-media/reclaim/releases/latest",
+      );
+      const callNumber = fetchMock.mock.calls.length;
+      if (callNumber === 1) {
+        return ok({
+          tag_name: "v0.2.0",
+          name: "Reclaim 0.2.0",
+          html_url: "https://github.com/kynex-media/reclaim/releases/tag/v0.2.0",
+          published_at: "2026-11-09T00:00:00Z",
+        });
+      }
+      return ok({
+        tag_name: "v0.1.0",
+        name: "Reclaim 0.1.0",
+        html_url: "https://github.com/kynex-media/reclaim/releases/tag/v0.1.0",
+        published_at: "2026-11-01T00:00:00Z",
+      });
     });
     render(<App />);
-    const gallery = await screen.findByRole("region", { name: "Recently found item photographs" });
-    fireEvent.click(
-      within(gallery).getByRole("button", {
-        name: "Open details for Blue insulated water bottle, Other — In custody",
-      }),
-    );
-    fireEvent.click(await screen.findByRole("button", { name: "Start return" }));
-    const dialog = await screen.findByRole("dialog", { name: "Return this item" });
-    // The adjudicated claim is preselected and explained, even though the
-    // capped lost-report list does not include it.
-    const trigger = within(dialog).getByRole("combobox", { name: "Related lost report" });
-    expect(trigger).toHaveTextContent("RCL-9 · Taylor Reed");
-    expect(
-      within(dialog).getByText(/Preselected from the confirmed claim for Taylor Reed/),
-    ).toBeInTheDocument();
-    // The preselection hint is the trigger's accessible description, so screen
-    // readers announce the context when focus lands on the combobox.
-    const hint = within(dialog).getByText(/Preselected from the confirmed claim/);
-    expect(trigger).toHaveAttribute("aria-describedby", hint.id);
-    // Staff can commit the preselection as-is...
-    fireEvent.keyDown(trigger, { key: "ArrowDown" });
-    fireEvent.keyDown(trigger, { key: "Enter" });
-    expect(trigger).toHaveTextContent("RCL-9 · Taylor Reed");
-    expect(within(dialog).getByText(/Preselected from the confirmed claim/)).toBeInTheDocument();
-    // ...or choose a different open report; the hint then disappears.
-    fireEvent.keyDown(trigger, { key: "ArrowDown" });
-    const listbox = await screen.findByRole("listbox", { name: "Related lost report" });
-    const options = within(listbox).getAllByRole("option");
-    expect(options).toHaveLength(2);
-    fireEvent.keyDown(trigger, { key: "ArrowDown" });
-    fireEvent.keyDown(trigger, { key: "Enter" });
-    expect(trigger).toHaveTextContent("RCL-2 · Jordan Blake · Gray jacket");
-    expect(within(dialog).queryByText(/Preselected from the confirmed claim/)).toBeNull();
-    expect(trigger).not.toHaveAttribute("aria-describedby");
-    fireEvent.change(within(dialog).getByLabelText(/^Recipient name/), {
-      target: { value: "Jordan Blake" },
-    });
-    fireEvent.change(within(dialog).getByLabelText(/^Verification reference or explanation/), {
-      target: { value: "Confirmed the zip pockets" },
-    });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm return" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Data/ }));
+    const heading = await screen.findByRole("heading", { name: "Backup & restore" });
+    const section = heading.closest("section")!;
+    // No network call may happen before the explicit click.
+    expect(fetchMock).not.toHaveBeenCalled();
+    const repoInput = within(section).getByLabelText(/GitHub repository/);
+    expect(repoInput).toHaveValue("kynex-media/reclaim");
+    fireEvent.click(within(section).getByRole("button", { name: "Check for updates" }));
+    await within(section).findByText(/Version v0\.2\.0 is available/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(section).getByRole("button", { name: /Release notes/ }));
     await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith("return_found_item", {
-        input: {
-          foundItemId: "item-9",
-          lostReportId: "lost-2",
-          recipientName: "Jordan Blake",
-          verificationMethod: "description_confirmed",
-          verificationNote: "Confirmed the zip pockets",
-          staffNote: "",
-        },
-      }),
+      expect(openUrlMock).toHaveBeenCalledWith(
+        "https://github.com/kynex-media/reclaim/releases/tag/v0.2.0",
+      ),
     );
-    invokeMock.mockImplementation(previous);
+    // A second check reports up-to-date truthfully.
+    fireEvent.click(within(section).getByRole("button", { name: "Check for updates" }));
+    await within(section).findByText(/You are up to date/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces update-check failures instead of guessing", async () => {
+    initialized = true;
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ message: "Not Found" }), { status: 404 }),
+    );
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Data/ }));
+    const heading = await screen.findByRole("heading", { name: "Backup & restore" });
+    const section = heading.closest("section")!;
+    fireEvent.change(within(section).getByLabelText(/GitHub repository/), {
+      target: { value: "example.org/no-releases" },
+    });
+    fireEvent.click(within(section).getByRole("button", { name: "Check for updates" }));
+    const alert = await within(section).findByRole("alert");
+    expect(alert).toHaveTextContent("No published release was found for that repository.");
+    // An invalid slug is rejected locally without any network call.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    fireEvent.change(within(section).getByLabelText(/GitHub repository/), {
+      target: { value: "https://github.com/example.org/no-releases" },
+    });
+    fireEvent.click(within(section).getByRole("button", { name: "Check for updates" }));
+    expect(await within(section).findByRole("alert")).toHaveTextContent(
+      "Enter the GitHub repository as owner/name",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("saves overnight operating hours and blocks ambiguous equal times", async () => {

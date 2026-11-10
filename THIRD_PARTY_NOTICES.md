@@ -1,6 +1,6 @@
 # Reclaim — Third-party notices
 
-**Generated:** 2026-11-07 by `scripts/generate-notices.mjs` from the actual production dependency graph:
+**Generated:** 2026-11-10 by `scripts/generate-notices.mjs` from the actual production dependency graph:
 the frontend runtime closure reported by `pnpm list --prod` (license fields read from each resolved
 package manifest on disk) and every registry crate locked in `src-tauri/Cargo.lock` (license records
 fetched from the crates.io API). License texts below are the canonical SPDX texts for the identifiers

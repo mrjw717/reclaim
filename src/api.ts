@@ -119,6 +119,75 @@ export type ConfirmedClaim = {
   reference: string;
   claimantName: string;
 };
+export type GithubRelease = {
+  tagName: string;
+  name: string;
+  htmlUrl: string;
+  publishedAt: string;
+};
+
+/** GitHub "owner/repo" slug accepted by the manual update check. */
+export function isValidRepoSlug(repo: string): boolean {
+  const parts = repo.trim().split("/");
+  if (parts.length !== 2) return false;
+  const ok = (part: string) =>
+    part.length > 0 &&
+    part.length <= 100 &&
+    /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(part) === true &&
+    !part.endsWith(".");
+  return ok(parts[0]) && ok(parts[1]);
+}
+
+/**
+ * Manual update check — the only network call Reclaim can make, and only
+ * when the user clicks "Check for updates" in Settings → Data.
+ */
+export async function checkGithubRelease(repo: string): Promise<GithubRelease> {
+  const slug = repo.trim();
+  if (!isValidRepoSlug(slug)) {
+    throw new Error(
+      "Enter the GitHub repository as owner/name, using letters, digits, dots, dashes, or underscores.",
+    );
+  }
+  let response: Response;
+  try {
+    response = await fetch(`https://api.github.com/repos/${slug}/releases/latest`, {
+      headers: { Accept: "application/vnd.github+json" },
+    });
+  } catch {
+    throw new Error(
+      "Could not reach GitHub. Check this computer's internet connection and try again.",
+    );
+  }
+  if (response.status === 404) {
+    throw new Error("No published release was found for that repository.");
+  }
+  if (response.status === 403) {
+    throw new Error("GitHub rate limit reached for this network. Try again a little later.");
+  }
+  if (!response.ok) {
+    throw new Error(`GitHub responded with status ${response.status}.`);
+  }
+  const data = (await response.json()) as {
+    tag_name?: unknown;
+    name?: unknown;
+    html_url?: unknown;
+    published_at?: unknown;
+  };
+  if (
+    typeof data.tag_name !== "string" ||
+    typeof data.html_url !== "string" ||
+    typeof data.published_at !== "string"
+  ) {
+    throw new Error("Could not read the release information GitHub returned.");
+  }
+  return {
+    tagName: data.tag_name,
+    name: typeof data.name === "string" ? data.name : "",
+    htmlUrl: data.html_url,
+    publishedAt: data.published_at,
+  };
+}
 export type ReturnInput = {
   foundItemId: string;
   lostReportId: string | null;
@@ -266,6 +335,7 @@ export const api = {
     invoke<void>("adjudicate_match", { lostReportId, foundItemId }),
   confirmedClaim: (foundItemId: string) =>
     invoke<ConfirmedClaim | null>("confirmed_claim", { foundItemId }),
+  checkGithubRelease: (repo: string) => checkGithubRelease(repo),
   itemActivity: (recordType: string, recordId: string) =>
     invoke<
       {

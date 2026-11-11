@@ -1,6 +1,6 @@
 # Reclaim 0.1.0 — Public Beta Candidate
 
-**Status:** Release candidate staged locally on 2026-11-08; qualified for public beta and awaiting explicit owner publication authorization. See [release qualification](release-readiness.md) for the evidence matrix and recorded limitations.
+**Status:** Release candidate. Published as `v0.1.0-rc.1` on 2026-11-10 by owner instruction. See [release qualification](release-readiness.md) for the evidence matrix and recorded limitations.
 
 ## License
 
@@ -32,4 +32,4 @@ Linux desktop (64-bit x86). Qualified artifacts for this beta: Debian (`.deb`) a
 
 ## Installation and upgrade
 
-Use the supplied `.deb` or `.rpm` package for the matching Linux distribution. Verify its SHA-256 checksum against the accompanying `SHA256SUMS` file (2026-11-08 release bytes: `.deb` 4,336,308 bytes / `7426c2d7…fdee5d2632`; `.rpm` 4,428,246 bytes / `e62871c8…f612e3044`). Before upgrading, close Reclaim and create a verified backup. Package upgrades preserve the application-data directory and run SQLite migrations on next launch (upgrade-with-data verified on Debian 13; migration 0004 adds a claim-integrity guarantee). Automatic updates are not enabled; install each future package manually. Uninstalling the package leaves your records and photos in the app-data directory.
+Use the supplied `.deb` or `.rpm` package for the matching Linux distribution. Verify the SHA-256 checksum against the accompanying `SHA256SUMS` file (release bytes built from commit `3903635`: `.deb` 4,511,154 bytes / `2b56f6366c1d18ff…323ed410c`; `.rpm` 4,602,791 bytes / `ed60b20f45af…9ce95abd`). Before upgrading, close Reclaim and create a verified backup. Package upgrades preserve the application-data directory and run SQLite migrations on next launch (upgrade-with-data verified on Debian 13; migration 0004 adds a claim-integrity guarantee). Automatic updates are not enabled; install each future package manually. Uninstalling the package leaves your records and photos in the app-data directory.

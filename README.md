@@ -2,7 +2,7 @@
 
 <img src="reclaim-icon.svg" alt="Reclaim logo" width="96" />
 
-# Reclaim
+# Reclaim — Lost & Found Management
 
 **Lost & found management that stays on your own computer.**
 
@@ -75,6 +75,10 @@ sudo dnf install ./Reclaim-0.1.0-1.x86_64.rpm
 ```
 
 Grab them from [Releases](../../releases). Both packages ship the desktop entry, hicolor icons, and license notices; your data directory is kept when you uninstall.
+
+### Windows
+
+The Windows installer (NSIS) is built automatically by GitHub Actions for every release tag — see [.github/workflows/release-windows.yml](.github/workflows/release-windows.yml) — and attached to the release. It requires the WebView2 runtime, which the installer bootstraps when missing. An experimental portable build may also be attached as a zip (`reclaim.exe` + `WebView2Loader.dll`); unzip anywhere and run, with the same runtime requirement. Windows builds are compiled and smoke-launched under Wine, but not yet hardware-tested — treat them as part of the release candidate.
 
 ## Updating
 

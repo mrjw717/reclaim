@@ -1,0 +1,50 @@
+name: Release (Windows)
+
+# Builds the Windows NSIS installer for release tags. Tauri's supported
+# Windows bundling environment is a real Windows runner; this complements
+# the Linux packages built locally.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        run: npm install -g pnpm@12.11.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and upload Windows installer
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Runs for v* tags; if a release already exists for the tag the
+          # installer is attached to it as an additional asset.
+          tagName: ${{ github.ref_name }}
+          releaseName: Reclaim Lost & Found Management ${{ github.ref_name }}
+          releaseBody: "Windows installer built by GitHub Actions. Requires the WebView2 runtime (installed automatically on updated Windows 10/11; the installer bootstraps it when missing)."
+          releaseDraft: false
+          prerelease: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') }}
+          args: --target x86_64-pc-windows-msvc --bundles nsis

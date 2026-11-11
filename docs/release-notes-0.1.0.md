@@ -8,7 +8,9 @@ Reclaim is released under the MIT License, copyright Kynex Media. See [LICENSE](
 
 ## Platform
 
-Linux desktop (64-bit x86). Qualified artifacts for this beta: Debian (`.deb`) and RPM packages, install/launch/removal and data-retention tested in disposable Debian 13 and Fedora 44 containers on the exact release bytes. Distribution scope is intentionally limited to these two package formats: an AppImage builds and runs on its build baseline (glibc 2.43) but is not portable to older distributions, and publication is deferred by owner decision until an older-baseline build environment is chosen. Other platforms are not qualified.
+Linux desktop (64-bit x86). Qualified artifacts for this beta: Debian (`.deb`) and RPM packages, install/launch/removal and data-retention tested in disposable Debian 13 and Fedora 44 containers on the exact release bytes. Distribution scope is intentionally limited to these two package formats: an AppImage builds and runs on its build baseline (glibc 2.43) but is not portable to older distributions, and publication is deferred by owner decision until an older-baseline build environment is chosen.
+
+**Windows:** the codebase compiles for Windows (`x86_64-pc-windows-gnu` cargo check passes) and an executable was produced and launched under Wine, failing only at the missing WebView2 runtime. Release-tag Windows installers (NSIS) are built automatically by GitHub Actions on `windows-latest` — Tauri's supported Windows bundling environment — and attached to the release. Windows has not yet been hardware-tested; treat it as part of the release candidate.
 
 ## Included
 
